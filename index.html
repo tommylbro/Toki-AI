@@ -106,7 +106,7 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // --- API Keys and Models (Change these) ---
-        // IMPORTANT: Replace "YOUR_GEMINI_API_KEY_HERE" with your actual API key
+        // IMPORTANT: The API key should be an empty string for the system to provide it.
         const API_KEY = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
@@ -250,55 +250,61 @@
             const [userId, setUserId] = useState(null);
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
+            const textareaRef = useRef(null);
 
-            // Function to handle the authentication and Firestore initialization
-            const initializeFirebase = async () => {
-                try {
-                    const app = window.firebase.initializeApp(firebaseConfig);
-                    const authInstance = window.firebase.getAuth(app);
-                    const dbInstance = window.firebase.getFirestore(app);
-                    setAuth(authInstance);
-                    setDb(dbInstance);
-
-                    if (initialAuthToken) {
-                        await window.firebase.signInWithCustomToken(authInstance, initialAuthToken);
-                    } else {
-                        await window.firebase.signInAnonymously(authInstance);
-                    }
-
-                    window.firebase.onAuthStateChanged(authInstance, (user) => {
-                        if (user) {
-                            setUserId(user.uid);
-                            setIsAuthReady(true);
-                            // Set up Firestore listener after authentication
-                            const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
-                            const q = window.firebase.query(window.firebase.collection(dbInstance, collectionPath));
-                            onSnapshot(q, (querySnapshot) => {
-                                const msgs = [];
-                                querySnapshot.forEach((doc) => {
-                                    msgs.push(doc.data());
-                                });
-                                // Sort messages in JavaScript to avoid Firestore index errors
-                                msgs.sort((a, b) => a.timestamp - b.timestamp);
-                                setMessages(msgs);
-                            });
-                        } else {
-                            // Signed out
-                            setUserId(null);
-                            setIsAuthReady(false);
-                        }
-                    });
-                } catch (error) {
-                    console.error("Error initializing Firebase:", error);
-                }
-            };
-
+            // Effect for dynamic textarea height
             useEffect(() => {
-                if (Object.keys(firebaseConfig).length > 0) {
-                    initializeFirebase();
-                } else {
-                    console.error("Firebase config is not available.");
+                const textarea = textareaRef.current;
+                if (textarea) {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = `${textarea.scrollHeight}px`;
                 }
+            }, [input]);
+
+            // Single effect to handle all Firebase initialization and listeners
+            useEffect(() => {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is not available.");
+                    return;
+                }
+
+                const app = window.firebase.initializeApp(firebaseConfig);
+                const authInstance = window.firebase.getAuth(app);
+                const dbInstance = window.firebase.getFirestore(app);
+                setAuth(authInstance);
+                setDb(dbInstance);
+
+                const unsubscribe = window.firebase.onAuthStateChanged(authInstance, async (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                        setIsAuthReady(true);
+                        // Set up Firestore listener after authentication is confirmed
+                        const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
+                        const q = window.firebase.query(window.firebase.collection(dbInstance, collectionPath));
+                        onSnapshot(q, (querySnapshot) => {
+                            const msgs = [];
+                            querySnapshot.forEach((doc) => {
+                                msgs.push(doc.data());
+                            });
+                            // Sort messages in JavaScript to avoid Firestore index errors
+                            msgs.sort((a, b) => a.timestamp - b.timestamp);
+                            setMessages(msgs);
+                        });
+                    } else {
+                        // User is signed out. Sign in anonymously.
+                        try {
+                           if (initialAuthToken) {
+                                await signInWithCustomToken(authInstance, initialAuthToken);
+                           } else {
+                                await signInAnonymously(authInstance);
+                           }
+                        } catch (error) {
+                            console.error("Error signing in:", error);
+                        }
+                    }
+                });
+                
+                return () => unsubscribe();
             }, [initialAuthToken, firebaseConfig]);
 
             useEffect(() => {
@@ -545,13 +551,13 @@
                     <div className="p-4 bg-gray-800 border-t border-gray-700">
                         <div className="relative flex items-center bg-gray-700 rounded-full shadow-lg">
                             <textarea
+                                ref={textareaRef}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
                                 placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
                                 rows={1}
-                                style={{ height: 'auto', minHeight: '48px' }}
                             ></textarea>
                             <div className="absolute right-2 flex items-center space-x-2">
                                 <button
