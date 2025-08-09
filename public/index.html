@@ -18,6 +18,7 @@
       import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
       import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
       import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+      // Expose Firebase functions to the global scope for the React script
       window.firebase = {
         initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged,
         getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query
@@ -265,6 +266,7 @@
                 const initializeFirebase = async () => {
                     if (Object.keys(firebaseConfig).length === 0) {
                         console.error("Firebase config is not available.");
+                        setIsAuthReady(true);
                         return;
                     }
 
@@ -275,20 +277,19 @@
                         setDb(dbInstance);
                         setAuth(authInstance);
 
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(authInstance, initialAuthToken);
-                        } else {
-                            await signInAnonymously(authInstance);
-                        }
-
-                        onAuthStateChanged(authInstance, (user) => {
+                        onAuthStateChanged(authInstance, async (user) => {
                             if (user) {
                                 setUserId(user.uid);
-                                setIsAuthReady(true);
                             } else {
-                                console.log("No user is signed in.");
-                                setIsAuthReady(true);
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(authInstance, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(authInstance);
+                                }
+                                // FIX: Replaced optional chaining with a compatible check
+                                setUserId((authInstance.currentUser && authInstance.currentUser.uid) || crypto.randomUUID());
                             }
+                            setIsAuthReady(true);
                         });
 
                     } catch (error) {
@@ -341,6 +342,10 @@
                     isCode,
                 };
 
+                // Add the user's message to the local state immediately for a responsive UI
+                // This is optional but improves the user experience
+                // setMessages(prevMessages => [...prevMessages, userMessage]);
+
                 try {
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     await addDoc(collection(db, collectionPath), {
@@ -354,14 +359,16 @@
                 setInput('');
                 setIsAIGenerating(true);
 
-                let chatHistory = messages.map(msg => ({
+                // FIX: Construct chat history with the current user message to ensure it's not missed.
+                // The onSnapshot listener might not have updated the messages state yet.
+                const currentChatHistory = messages.map(msg => ({
                     role: msg.role,
                     parts: [{ text: msg.content }]
                 }));
-                chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+                currentChatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
                 const payload = {
-                    contents: chatHistory,
+                    contents: currentChatHistory,
                 };
 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${API_KEY}`;
@@ -455,6 +462,8 @@
                             }
                         }
                     },
+                    // FIX: The TTS API payload requires the model to be specified.
+                    model: TTS_MODEL
                 };
 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${API_KEY}`;
@@ -468,17 +477,12 @@
 
                     const result = await response.json();
 
-                    const audioData = result && result.candidates && result.candidates[0] &&
-                                     result.candidates[0].content && result.candidates[0].content.parts &&
-                                     result.candidates[0].content.parts[0] &&
-                                     result.candidates[0].content.parts[0].inlineData &&
-                                     result.candidates[0].content.parts[0].inlineData.data;
-
-                    const mimeType = result && result.candidates && result.candidates[0] &&
-                                     result.candidates[0].content && result.candidates[0].content.parts &&
-                                     result.candidates[0].content.parts[0] &&
-                                     result.candidates[0].content.parts[0].inlineData &&
-                                     result.candidates[0].content.parts[0].inlineData.mimeType;
+                    // FIX: Replaced optional chaining with conditional expressions for compatibility with Babel 6.
+                    const part = result && result.candidates && result.candidates[0] &&
+                                 result.candidates[0].content && result.candidates[0].content.parts &&
+                                 result.candidates[0].content.parts[0];
+                    const audioData = part && part.inlineData && part.inlineData.data;
+                    const mimeType = part && part.inlineData && part.inlineData.mimeType;
 
                     if (audioData && mimeType && mimeType.startsWith("audio/")) {
                         const sampleRateMatch = mimeType.match(/rate=(\d+)/);
