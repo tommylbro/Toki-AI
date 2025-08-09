@@ -274,13 +274,13 @@
                 setAuth(authInstance);
                 setDb(dbInstance);
 
-                const unsubscribe = window.firebase.onAuthStateChanged(authInstance, async (user) => {
+                const unsubscribe = onAuthStateChanged(authInstance, (user) => {
                     if (user) {
                         setUserId(user.uid);
                         setIsAuthReady(true);
                         // Set up Firestore listener after authentication is confirmed
                         const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
-                        const q = window.firebase.query(window.firebase.collection(dbInstance, collectionPath));
+                        const q = query(collection(dbInstance, collectionPath));
                         onSnapshot(q, (querySnapshot) => {
                             const msgs = [];
                             querySnapshot.forEach((doc) => {
@@ -291,16 +291,19 @@
                             setMessages(msgs);
                         });
                     } else {
-                        // User is signed out. Sign in anonymously.
-                        try {
-                           if (initialAuthToken) {
-                                await signInWithCustomToken(authInstance, initialAuthToken);
-                           } else {
-                                await signInAnonymously(authInstance);
+                        // User is signed out. Sign in.
+                        const signIn = async () => {
+                           try {
+                               if (initialAuthToken) {
+                                   await signInWithCustomToken(authInstance, initialAuthToken);
+                               } else {
+                                   await signInAnonymously(authInstance);
+                               }
+                           } catch (error) {
+                               console.error("Error signing in:", error);
                            }
-                        } catch (error) {
-                            console.error("Error signing in:", error);
-                        }
+                        };
+                        signIn();
                     }
                 });
 
