@@ -108,7 +108,6 @@
         // Moved all global variable declarations to the top of the script
         const { useState, useEffect, useRef } = React;
         const ReactDOM = window.ReactDOM;
-        const marked = window.marked;
 
         // Define global variables with fallbacks
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -116,7 +115,7 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // --- API Keys and Models (Change these) ---
-        const API_KEY = "";
+        const API_KEY = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -244,6 +243,7 @@
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
             const [isAuthReady, setIsAuthReady] = useState(false);
+            const marked = window.marked; // Get the marked library from the global window object
 
             useEffect(() => {
                 const textarea = textareaRef.current;
@@ -339,6 +339,15 @@
                     console.error("Cannot send message: Missing prompt or user ID.");
                     return;
                 }
+
+                if (!API_KEY) {
+                    console.error("API key is missing. Please provide a valid API key.");
+                    const aiText = "I'm sorry, I can't generate a response. The API key is missing. Please add a valid API key to the `API_KEY` constant in the code.";
+                    const aiMessage = { role: 'ai', content: aiText, };
+                    setMessages(prevMessages => [...prevMessages, aiMessage]);
+                    setIsAIGenerating(false);
+                    return;
+                }
                 
                 // Add user message to state immediately for responsiveness
                 const newUserMessage = {
@@ -366,9 +375,9 @@
                     }
                 }
 
-                // Prepare the chat history for the AI API call
+                // Prepare the chat history for the AI API call, converting 'ai' role to 'model'
                 const chatHistoryForAPI = messages.map(msg => ({
-                    role: msg.role,
+                    role: msg.role === 'ai' ? 'model' : msg.role,
                     parts: [{ text: msg.content }]
                 }));
                 chatHistoryForAPI.push({ role: 'user', parts: [{ text: prompt }] });
@@ -378,6 +387,8 @@
                 };
 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${API_KEY}`;
+                
+                console.log("Using API URL:", apiUrl);
 
                 const fetchWithRetry = async (url, options, retries = 5) => {
                     for (let i = 0; i < retries; i++) {
@@ -414,7 +425,12 @@
                     });
 
                     if (!response.ok) {
-                        const errorData = await response.json();
+                        let errorData;
+                        try {
+                            errorData = await response.json();
+                        } catch (e) {
+                            throw new Error(`API error: ${response.status} ${response.statusText} - Could not parse error response as JSON.`);
+                        }
                         throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error.message}`);
                     }
 
@@ -428,7 +444,11 @@
                     }
                 } catch (error) {
                     console.error("Error fetching AI response:", error);
-                    aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
+                    if (error.message.includes('401')) {
+                        aiText = "I'm sorry, there was an authentication error with the AI service. The API key is likely invalid. Please check and update the `API_KEY` constant in the code.";
+                    } else {
+                        aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
+                    }
                 } finally {
                     const aiMessage = {
                         role: 'ai',
@@ -547,7 +567,7 @@
 
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {!isAuthReady ? (
+                        {!isAuthReady || !marked ? (
                             <LoadingIndicator />
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
