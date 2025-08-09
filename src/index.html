@@ -15,14 +15,22 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
     <!-- Firebase CDNs -->
     <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-      import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-      import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-      // Expose Firebase functions to the global scope for the React script
-      window.firebase = {
-        initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged,
-        getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query
-      };
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // This script is for loading Firebase. The main app script will use these globals.
+        window.initializeApp = initializeApp;
+        window.getAuth = getAuth;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.signInAnonymously = signInAnonymously;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.getFirestore = getFirestore;
+        window.collection = collection;
+        window.onSnapshot = onSnapshot;
+        window.addDoc = addDoc;
+        window.serverTimestamp = serverTimestamp;
+        window.query = query;
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -93,14 +101,14 @@
 </head>
 <body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
     <div id="root" class="w-full h-full max-w-4xl"></div>
-    <!-- The main application script is now type="text/babel" for JSX support -->
     <script type="text/babel">
+        // The Firebase functions are loaded by a separate script tag and are globally available.
+        const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } = window;
+
         // Moved all global variable declarations to the top of the script
         const { useState, useEffect, useRef } = React;
         const ReactDOM = window.ReactDOM;
         const marked = window.marked;
-        const { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.firebase;
-        const { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } = window.firebase;
 
         // Define global variables with fallbacks
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -108,7 +116,6 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // --- API Keys and Models (Change these) ---
-        // IMPORTANT: The API key should be an empty string for the system to provide it.
         const API_KEY = "";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
@@ -198,14 +205,6 @@
             )
         );
 
-        const ImageIcon = ({ size = 24, className = "" }) => (
-            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
-                React.createElement('rect', { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }),
-                React.createElement('circle', { cx: "9", cy: "9", r: "2" }),
-                React.createElement('path', { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" })
-            )
-        );
-
         const FileTextIcon = ({ size = 24, className = "" }) => (
             React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
                 React.createElement('path', { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" }),
@@ -221,13 +220,6 @@
                 React.createElement('path', { d: "m18 16 4-4-4-4" }),
                 React.createElement('path', { d: "m6 8-4 4 4 4" }),
                 React.createElement('path', { d: "M14.5 4l-5 16" })
-            )
-        );
-
-        const SendHorizonalIcon = ({ size = 24, className = "" }) => (
-            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
-                React.createElement('path', { d: "m3 3 3 9-3 9 19-9Z" }),
-                React.createElement('path', { d: "M6 12h16" })
             )
         );
 
@@ -247,7 +239,6 @@
             const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
             const [db, setDb] = useState(null);
-            const [auth, setAuth] = useState(null);
             const [userId, setUserId] = useState(null);
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
@@ -262,11 +253,12 @@
                 }
             }, [input]);
 
+            // Combined Firebase initialization and auth state logic
             useEffect(() => {
-                const initializeFirebase = async () => {
+                const initialize = async () => {
+                    console.log("Initializing Firebase...");
                     if (Object.keys(firebaseConfig).length === 0) {
-                        console.error("Firebase config is not available.");
-                        setAuth(null);
+                        console.error("Firebase config is not available. Running in local mode.");
                         setDb(null);
                         setUserId(crypto.randomUUID());
                         setIsAuthReady(true);
@@ -274,49 +266,44 @@
                     }
 
                     try {
-                        const appInstance = window.firebase.initializeApp(firebaseConfig);
-                        const authInstance = window.firebase.getAuth(appInstance);
-                        const dbInstance = window.firebase.getFirestore(appInstance);
+                        const appInstance = initializeApp(firebaseConfig);
+                        const authInstance = getAuth(appInstance);
+                        const dbInstance = getFirestore(appInstance);
                         setDb(dbInstance);
-                        setAuth(authInstance);
 
-                        const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
+                        // Sign in with custom token or anonymously
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(authInstance, initialAuthToken);
+                        } else {
+                            await signInAnonymously(authInstance);
+                        }
+
+                        // Use onAuthStateChanged to set the user ID and listen for changes
+                        const unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
                             if (user) {
-                                // User is signed in.
+                                console.log("User signed in:", user.uid);
                                 setUserId(user.uid);
                             } else {
-                                // No user is signed in, attempt to sign in.
-                                try {
-                                    if (initialAuthToken) {
-                                        await signInWithCustomToken(authInstance, initialAuthToken);
-                                    } else {
-                                        await signInAnonymously(authInstance);
-                                    }
-                                } catch (error) {
-                                    console.error("Error during Firebase sign-in:", error);
-                                    // If sign-in fails, use a random UUID for the user ID
-                                    setUserId(crypto.randomUUID());
-                                }
+                                console.log("User signed out.");
+                                setUserId(null); // Or keep the anonymous ID
                             }
-                             // Set auth ready state after the initial auth check is complete.
                             setIsAuthReady(true);
                         });
                         return () => unsubscribeAuth();
                     } catch (error) {
                         console.error("Error during Firebase initialization:", error);
-                        // If initialization fails, set a random UUID and indicate ready state
-                        setAuth(null);
                         setDb(null);
                         setUserId(crypto.randomUUID());
-                        setIsAuthReady(true);
+                        setIsAuthReady(true); // Ensure the app becomes ready even on error
                     }
                 };
-                initializeFirebase();
-            }, [initialAuthToken, firebaseConfig]);
+                initialize();
+            }, []); // Empty dependency array means this runs once on mount
 
-
+            // Firestore message listener
             useEffect(() => {
-                if (db && userId) {
+                if (db && userId && isAuthReady) {
+                    console.log("Setting up Firestore listener for user:", userId);
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     const q = query(collection(db, collectionPath));
                     
@@ -332,11 +319,13 @@
                             return aMillis - bMillis;
                         });
                         setMessages(msgs);
+                    }, (error) => {
+                        console.error("Error with Firestore onSnapshot:", error);
                     });
-
+                    
                     return () => unsubscribeFirestore();
                 }
-            }, [db, userId, appId]);
+            }, [db, userId, appId, isAuthReady]); // Re-run if these change
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
@@ -346,19 +335,18 @@
             }, [messages]);
 
             const handleSendMessage = async (prompt, isCode = false) => {
-                if (!prompt.trim() || !userId || !db) return;
-
-                const userMessage = {
-                    role: 'user',
-                    content: prompt,
-                    isCode,
-                };
-
+                if (!prompt.trim() || !userId || !db) {
+                    console.error("Cannot send message: Missing prompt, user ID, or database instance.");
+                    return;
+                }
+                
                 // Add user message to Firestore
                 try {
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     await addDoc(collection(db, collectionPath), {
-                        ...userMessage,
+                        role: 'user',
+                        content: prompt,
+                        isCode,
                         timestamp: serverTimestamp(),
                     });
                 } catch (error) {
@@ -403,6 +391,7 @@
                             throw error;
                         }
                     }
+                    throw new Error("Failed to fetch after multiple retries.");
                 };
 
                 let aiText;
@@ -454,15 +443,15 @@
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     if (isCodeMode) {
-                        handleExplainCode();
+                        handleSendMessage(input, true);
                     } else {
-                        handleRefineWriting();
+                        handleSendMessage(input, false);
                     }
                 }
             };
 
             const handleRefineWriting = () => {
-                handleSendMessage(input);
+                handleSendMessage(input, false);
             };
 
             const handleExplainCode = () => {
@@ -497,11 +486,11 @@
                     });
 
                     const result = await response.json();
-                    const part = result && result.candidates && result.candidates[0] &&
-                                 result.candidates[0].content && result.candidates[0].content.parts &&
-                                 result.candidates[0].content.parts[0];
-                    const audioData = part && part.inlineData && part.inlineData.data;
-                    const mimeType = part && part.inlineData && part.inlineData.mimeType;
+                    const part = (result && result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0)
+                        ? result.candidates[0].content.parts[0]
+                        : null;
+                    const audioData = (part && part.inlineData) ? part.inlineData.data : null;
+                    const mimeType = (part && part.inlineData) ? part.inlineData.mimeType : null;
 
                     if (audioData && mimeType && mimeType.startsWith("audio/")) {
                         const sampleRateMatch = mimeType.match(/rate=(\d+)/);
@@ -521,19 +510,12 @@
                 }
             };
 
-            const LoadingIndicator = ({ isAuthReady }) => {
-                let message = "Authenticating...";
-                if (isAuthReady) {
-                    message = "Ready!";
-                }
-
-                return (
-                    <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
-                        <div className="dot-flashing mb-4"></div>
-                        <p>{message}</p>
-                    </div>
-                );
-            };
+            const LoadingIndicator = () => (
+                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
+                    <div className="dot-flashing mb-4"></div>
+                    <p>Authenticating...</p>
+                </div>
+            );
 
             return (
                 <div className="flex flex-col h-full bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
@@ -551,7 +533,7 @@
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
                         {!isAuthReady ? (
-                            <LoadingIndicator isAuthReady={isAuthReady} />
+                            <LoadingIndicator />
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Madison AI.</p>
