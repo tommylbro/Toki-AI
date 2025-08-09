@@ -266,6 +266,9 @@
                 const initializeFirebase = async () => {
                     if (Object.keys(firebaseConfig).length === 0) {
                         console.error("Firebase config is not available.");
+                        setAuth(null);
+                        setDb(null);
+                        setUserId(crypto.randomUUID());
                         setIsAuthReady(true);
                         return;
                     }
@@ -277,39 +280,40 @@
                         setDb(dbInstance);
                         setAuth(authInstance);
 
-                        // Use onAuthStateChanged to handle initial authentication and subsequent changes
-                        onAuthStateChanged(authInstance, async (user) => {
+                        const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
                             if (user) {
                                 // User is signed in.
                                 setUserId(user.uid);
-                                setIsAuthReady(true);
                             } else {
-                                // No user is signed in. Attempt to sign in.
+                                // No user is signed in, attempt to sign in.
                                 try {
                                     if (initialAuthToken) {
                                         await signInWithCustomToken(authInstance, initialAuthToken);
                                     } else {
                                         await signInAnonymously(authInstance);
                                     }
-                                    // The onAuthStateChanged listener will be called again with the signed-in user
                                 } catch (error) {
                                     console.error("Error during Firebase sign-in:", error);
-                                    // If sign-in fails, set a random user ID for anonymous functionality
+                                    // If sign-in fails, use a random UUID for the user ID
                                     setUserId(crypto.randomUUID());
-                                    setIsAuthReady(true);
                                 }
                             }
+                             // Set auth ready state after the initial auth check is complete.
+                            setIsAuthReady(true);
                         });
+                        return () => unsubscribeAuth();
                     } catch (error) {
                         console.error("Error during Firebase initialization:", error);
+                        // If initialization fails, set a random UUID and indicate ready state
+                        setAuth(null);
+                        setDb(null);
+                        setUserId(crypto.randomUUID());
                         setIsAuthReady(true);
                     }
                 };
+                initializeFirebase();
+            }, [initialAuthToken, firebaseConfig]);
 
-                if (!auth) {
-                    initializeFirebase();
-                }
-            }, [initialAuthToken, firebaseConfig, auth]);
 
             useEffect(() => {
                 if (db && userId) {
@@ -629,4 +633,22 @@
                                     </button>
                                 ) : (
                                     <button
-                                        className="p-2 bg-indigo-600 text-white rounded-full shad
+                                        className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
+                                        onClick={handleRefineWriting}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
+                                    >
+                                        <WandIcon size={16} />
+                                        <span className="font-semibold">✨ Refine Writing</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(React.createElement(App, null), document.getElementById('root'));
+    </script>
+</body>
+</html>
