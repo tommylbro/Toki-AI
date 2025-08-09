@@ -346,7 +346,7 @@
             }, [messages]);
 
             const handleSendMessage = async (prompt, isCode = false) => {
-                if (!prompt.trim() || !userId) return;
+                if (!prompt.trim() || !userId || !db) return;
 
                 const userMessage = {
                     role: 'user',
@@ -354,10 +354,7 @@
                     isCode,
                 };
 
-                // Add the user's message to the local state immediately for a responsive UI
-                // This is optional but improves the user experience
-                // setMessages(prevMessages => [...prevMessages, userMessage]);
-
+                // Add user message to Firestore
                 try {
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     await addDoc(collection(db, collectionPath), {
@@ -366,13 +363,13 @@
                     });
                 } catch (error) {
                     console.error("Error writing user message to Firestore:", error);
+                    setIsAIGenerating(false);
+                    return;
                 }
 
                 setInput('');
                 setIsAIGenerating(true);
 
-                // FIX: Construct chat history with the current user message to ensure it's not missed.
-                // The onSnapshot listener might not have updated the messages state yet.
                 const currentChatHistory = messages.map(msg => ({
                     role: msg.role,
                     parts: [{ text: msg.content }]
@@ -390,6 +387,7 @@
                         try {
                             const response = await fetch(url, options);
                             if (response.status === 429 && i < retries - 1) { // Too Many Requests
+                                console.warn(`API call failed with status 429. Retrying in ${Math.pow(2, i)} seconds...`);
                                 const delay = Math.pow(2, i) * 1000;
                                 await new Promise(resolve => setTimeout(resolve, delay));
                                 continue;
@@ -397,6 +395,7 @@
                             return response;
                         } catch (error) {
                             if (i < retries - 1) {
+                                console.warn(`API call failed. Retrying in ${Math.pow(2, i)} seconds...`);
                                 const delay = Math.pow(2, i) * 1000;
                                 await new Promise(resolve => setTimeout(resolve, delay));
                                 continue;
@@ -406,6 +405,7 @@
                     }
                 };
 
+                let aiText;
                 try {
                     const response = await fetchWithRetry(apiUrl, {
                         method: 'POST',
@@ -415,27 +415,37 @@
                         body: JSON.stringify(payload),
                     });
 
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error.message}`);
+                    }
+
                     const result = await response.json();
-                    let aiText = "I am sorry, I couldn't process that request.";
                     if (result.candidates && result.candidates.length > 0 &&
                         result.candidates[0].content && result.candidates[0].content.parts &&
                         result.candidates[0].content.parts.length > 0) {
                         aiText = result.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Invalid or empty response from AI model.");
                     }
-
+                } catch (error) {
+                    console.error("Error fetching AI response:", error);
+                    aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
+                } finally {
                     const aiMessage = {
                         role: 'ai',
                         content: aiText,
                     };
 
-                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                    await addDoc(collection(db, collectionPath), {
-                        ...aiMessage,
-                        timestamp: serverTimestamp(),
-                    });
-                } catch (error) {
-                    console.error("Error fetching AI response:", error);
-                } finally {
+                    try {
+                        const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                        await addDoc(collection(db, collectionPath), {
+                            ...aiMessage,
+                            timestamp: serverTimestamp(),
+                        });
+                    } catch (firestoreError) {
+                        console.error("Error writing AI message to Firestore:", firestoreError);
+                    }
                     setIsAIGenerating(false);
                 }
             };
@@ -474,7 +484,6 @@
                             }
                         }
                     },
-                    // FIX: The TTS API payload requires the model to be specified.
                     model: TTS_MODEL
                 };
 
@@ -488,8 +497,6 @@
                     });
 
                     const result = await response.json();
-
-                    // FIX: Replaced optional chaining with conditional expressions for compatibility with Babel 6.
                     const part = result && result.candidates && result.candidates[0] &&
                                  result.candidates[0].content && result.candidates[0].content.parts &&
                                  result.candidates[0].content.parts[0];
