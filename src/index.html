@@ -107,7 +107,7 @@
 
         // --- API Keys and Models (Change these) ---
         // IMPORTANT: The API key should be an empty string for the system to provide it.
-        const API_KEY = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
+        const API_KEY = "";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -303,7 +303,7 @@
                         }
                     }
                 });
-                
+
                 return () => unsubscribe();
             }, [initialAuthToken, firebaseConfig]);
 
@@ -455,7 +455,7 @@
                     });
 
                     const result = await response.json();
-                    
+
                     // Safely access nested properties without optional chaining
                     const audioData = result && result.candidates && result.candidates[0] &&
                                      result.candidates[0].content && result.candidates[0].content.parts &&
@@ -476,7 +476,7 @@
                         const pcm16 = new Int16Array(pcmData);
                         const wavBlob = pcmToWav(pcm16, sampleRate);
                         const audioUrl = URL.createObjectURL(wavBlob);
-                        
+
                         const audio = new Audio(audioUrl);
                         audio.play();
                     } else {
