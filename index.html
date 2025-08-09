@@ -251,7 +251,9 @@
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
-            const [isLoading, setIsLoading] = useState(true);
+            
+            // New state to manage the authentication status
+            const [isAuthReady, setIsAuthReady] = useState(false);
 
             // Effect for dynamic textarea height
             useEffect(() => {
@@ -263,39 +265,38 @@
             }, [input]);
 
             // This useEffect handles Firebase initialization and authentication state changes.
+            // It now explicitly handles the sign-in and waits for the state to be ready.
             useEffect(() => {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config is not available.");
-                    setIsLoading(false);
-                    return;
-                }
-
-                const appInstance = window.firebase.initializeApp(firebaseConfig);
-                const authInstance = window.firebase.getAuth(appInstance);
-                const dbInstance = window.firebase.getFirestore(appInstance);
-                setDb(dbInstance);
-                setAuth(authInstance);
-
-                const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                        setIsLoading(false); // Authentication is ready, stop the main loading indicator.
-                    } else {
-                        // User is not authenticated, sign in anonymously.
-                        try {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(authInstance, initialAuthToken);
-                            } else {
-                                await signInAnonymously(authInstance);
-                            }
-                        } catch (error) {
-                            console.error("Error signing in:", error);
-                            setIsLoading(false); // Stop loading on error
-                        }
+                const initializeFirebase = async () => {
+                    if (Object.keys(firebaseConfig).length === 0) {
+                        console.error("Firebase config is not available.");
+                        return;
                     }
-                });
 
-                return () => unsubscribeAuth();
+                    try {
+                        const appInstance = window.firebase.initializeApp(firebaseConfig);
+                        const authInstance = window.firebase.getAuth(appInstance);
+                        const dbInstance = window.firebase.getFirestore(appInstance);
+                        setDb(dbInstance);
+                        setAuth(authInstance);
+
+                        let userCredential;
+                        if (initialAuthToken) {
+                            userCredential = await signInWithCustomToken(authInstance, initialAuthToken);
+                        } else {
+                            userCredential = await signInAnonymously(authInstance);
+                        }
+                        
+                        setUserId(userCredential.user.uid);
+                    } catch (error) {
+                        console.error("Error during Firebase initialization or sign-in:", error);
+                    } finally {
+                        // Mark authentication as ready whether it succeeded or failed
+                        setIsAuthReady(true);
+                    }
+                };
+
+                initializeFirebase();
             }, [initialAuthToken, firebaseConfig]);
 
             // This useEffect handles fetching messages after a user is authenticated.
@@ -501,12 +502,10 @@
                 }
             };
 
-            const LoadingIndicator = ({ isLoading, isAuthReady }) => {
-                let message = "";
-                if (isLoading) {
-                    message = "Loading app...";
-                } else if (!isAuthReady) {
-                    message = "Authenticating...";
+            const LoadingIndicator = ({ isAuthReady }) => {
+                let message = "Authenticating...";
+                if (isAuthReady) {
+                    message = "Ready!";
                 }
 
                 return (
@@ -532,8 +531,8 @@
 
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {isLoading || !userId ? (
-                            <LoadingIndicator isLoading={isLoading} isAuthReady={!!userId} />
+                        {!isAuthReady ? (
+                            <LoadingIndicator isAuthReady={isAuthReady} />
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Madison AI.</p>
@@ -591,11 +590,13 @@
                                 className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
                                 placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
                                 rows={1}
+                                disabled={!isAuthReady}
                             ></textarea>
                             <div className="absolute right-2 flex items-center space-x-2">
                                 <button
                                     className="p-2 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                     onClick={() => setIsCodeMode(!isCodeMode)}
+                                    disabled={!isAuthReady}
                                 >
                                     {isCodeMode ? (
                                         <React.Fragment>
@@ -613,7 +614,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleExplainCode}
-                                        disabled={isAIGenerating || !input.trim() || !userId}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
                                     >
                                         <CodeIcon size={16} />
                                         <span className="font-semibold">✨ Explain Code</span>
@@ -622,7 +623,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleRefineWriting}
-                                        disabled={isAIGenerating || !input.trim() || !userId}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
                                     >
                                         <WandIcon size={16} />
                                         <span className="font-semibold">✨ Refine Writing</span>
