@@ -94,6 +94,7 @@
     <div id="root" class="w-full h-full max-w-4xl"></div>
     <!-- The main application script is now type="text/babel" for JSX support -->
     <script type="text/babel">
+        // Moved all global variable declarations to the top of the script
         const { useState, useEffect, useRef } = React;
         const ReactDOM = window.ReactDOM;
         const marked = window.marked;
@@ -244,8 +245,8 @@
             const [input, setInput] = useState('');
             const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
-            const [isAuthReady, setIsAuthReady] = useState(false);
             const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
             const [userId, setUserId] = useState(null);
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
@@ -261,52 +262,26 @@
                 }
             }, [input]);
 
-            // This single useEffect now handles the entire Firebase initialization, authentication, and data subscription lifecycle.
+            // This useEffect handles Firebase initialization and authentication state changes.
             useEffect(() => {
-                // Ensure Firebase config is available
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config is not available.");
+                    setIsLoading(false);
                     return;
                 }
 
-                // Initialize Firebase and its services
                 const appInstance = window.firebase.initializeApp(firebaseConfig);
                 const authInstance = window.firebase.getAuth(appInstance);
                 const dbInstance = window.firebase.getFirestore(appInstance);
                 setDb(dbInstance);
+                setAuth(authInstance);
 
-                // Start the authentication state listener
                 const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
                     if (user) {
-                        // User is signed in.
-                        console.log("Authentication successful. User ID:", user.uid);
                         setUserId(user.uid);
-                        setIsAuthReady(true);
-                        setIsLoading(false); // Stop showing the loading indicator
-
-                        // Now that we have a user, set up the Firestore listener for messages
-                        const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
-                        const q = query(collection(dbInstance, collectionPath));
-
-                        const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
-                            const msgs = [];
-                            querySnapshot.forEach((doc) => {
-                                msgs.push({ ...doc.data(), id: doc.id });
-                            });
-
-                            // Sort messages in JavaScript to ensure correct order
-                            msgs.sort((a, b) => {
-                                const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
-                                const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
-                                return aMillis - bMillis;
-                            });
-                            setMessages(msgs);
-                        });
-
-                        return () => unsubscribeFirestore(); // Cleanup Firestore listener on unmount or user change
+                        setIsLoading(false); // Authentication is ready, stop the main loading indicator.
                     } else {
-                        // No user is signed in, attempt to sign in anonymously
-                        console.log("Attempting to sign in anonymously...");
+                        // User is not authenticated, sign in anonymously.
                         try {
                             if (initialAuthToken) {
                                 await signInWithCustomToken(authInstance, initialAuthToken);
@@ -320,10 +295,32 @@
                     }
                 });
 
-                // Cleanup function to unsubscribe from the auth listener when the component unmounts
                 return () => unsubscribeAuth();
-            }, [initialAuthToken, firebaseConfig, appId]);
+            }, [initialAuthToken, firebaseConfig]);
 
+            // This useEffect handles fetching messages after a user is authenticated.
+            useEffect(() => {
+                if (db && userId) {
+                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                    const q = query(collection(db, collectionPath));
+                    const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
+                        const msgs = [];
+                        querySnapshot.forEach((doc) => {
+                            msgs.push({ ...doc.data(), id: doc.id });
+                        });
+
+                        // Sort messages in JavaScript to ensure correct order
+                        msgs.sort((a, b) => {
+                            const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
+                            const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
+                            return aMillis - bMillis;
+                        });
+                        setMessages(msgs);
+                    });
+
+                    return () => unsubscribeFirestore();
+                }
+            }, [db, userId, appId]);
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
@@ -333,7 +330,7 @@
             }, [messages]);
 
             const handleSendMessage = async (prompt, isCode = false) => {
-                if (!prompt.trim() || !isAuthReady) return;
+                if (!prompt.trim() || !userId) return;
 
                 const userMessage = {
                     role: 'user',
@@ -535,8 +532,8 @@
 
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {isLoading || !isAuthReady ? (
-                            <LoadingIndicator isLoading={isLoading} isAuthReady={isAuthReady} />
+                        {isLoading || !userId ? (
+                            <LoadingIndicator isLoading={isLoading} isAuthReady={!!userId} />
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Madison AI.</p>
@@ -616,7 +613,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleExplainCode}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
+                                        disabled={isAIGenerating || !input.trim() || !userId}
                                     >
                                         <CodeIcon size={16} />
                                         <span className="font-semibold">✨ Explain Code</span>
@@ -625,7 +622,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleRefineWriting}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
+                                        disabled={isAIGenerating || !input.trim() || !userId}
                                     >
                                         <WandIcon size={16} />
                                         <span className="font-semibold">✨ Refine Writing</span>
@@ -638,7 +635,9 @@
             );
         };
 
-        ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App, null));
+        window.onload = function() {
+            ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App, null));
+        };
     </script>
 </body>
 </html>
