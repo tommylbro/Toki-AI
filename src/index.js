@@ -1,6 +1,6 @@
 import React from 'react';
 import './index.css';
-import App from './App';
+import './index.html';
 import reportWebVitals from './reportWebVitals';
 import ReactDOM from 'react-dom/client';
 
@@ -19,7 +19,7 @@ if ('serviceWorker' in navigator) {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <html />
   </React.StrictMode>
 );
 
