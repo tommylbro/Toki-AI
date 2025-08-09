@@ -261,7 +261,7 @@
                 }
             }, [input]);
 
-            // Single effect to handle all Firebase initialization and listeners
+            // First useEffect: Handles Firebase initialization and authentication
             useEffect(() => {
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config is not available.");
@@ -292,18 +292,6 @@
                     if (user) {
                         setUserId(user.uid);
                         setIsAuthReady(true);
-                        // Set up Firestore listener after authentication is confirmed
-                        const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
-                        const q = query(collection(dbInstance, collectionPath));
-                        onSnapshot(q, (querySnapshot) => {
-                            const msgs = [];
-                            querySnapshot.forEach((doc) => {
-                                msgs.push(doc.data());
-                            });
-                            // Sort messages in JavaScript to avoid Firestore index errors
-                            msgs.sort((a, b) => a.timestamp - b.timestamp);
-                            setMessages(msgs);
-                        });
                     } else {
                         // User is signed out or sign-in failed. Resetting state.
                         setUserId(null);
@@ -314,6 +302,35 @@
 
                 return () => unsubscribe();
             }, [initialAuthToken, firebaseConfig]);
+
+            // Second useEffect: Sets up the Firestore listener only after authentication is ready
+            useEffect(() => {
+                // We only proceed if `db` and `userId` are set.
+                if (db && userId) {
+                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                    // The query no longer uses orderBy to avoid needing a Firestore index.
+                    const q = query(collection(db, collectionPath));
+
+                    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+                        const msgs = [];
+                        querySnapshot.forEach((doc) => {
+                            msgs.push({ ...doc.data(), id: doc.id });
+                        });
+
+                        // Sort messages in JavaScript to ensure correct order
+                        // This uses a non-optional chaining syntax for compatibility with older Babel versions.
+                        msgs.sort((a, b) => {
+                          const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
+                          const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
+                          return aMillis - bMillis;
+                        });
+                        setMessages(msgs);
+                    });
+
+                    // Cleanup function to detach the listener when the component unmounts or dependencies change
+                    return () => unsubscribe();
+                }
+            }, [db, userId, appId]);
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
@@ -328,7 +345,6 @@
                 const userMessage = {
                     role: 'user',
                     content: prompt,
-                    timestamp: new Date().toISOString(),
                     isCode,
                 };
 
@@ -346,6 +362,7 @@
                 setInput('');
                 setIsAIGenerating(true);
 
+                // We'll pass the messages from state to the API call
                 let chatHistory = messages.map(msg => ({
                     role: msg.role,
                     parts: [{ text: msg.content }]
@@ -401,7 +418,6 @@
                     const aiMessage = {
                         role: 'ai',
                         content: aiText,
-                        timestamp: new Date().toISOString(),
                     };
 
                     // Add AI message to Firestore
