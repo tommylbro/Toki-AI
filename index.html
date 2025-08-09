@@ -245,7 +245,6 @@
             const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
             const [isAuthReady, setIsAuthReady] = useState(false);
-            const [auth, setAuth] = useState(null);
             const [db, setDb] = useState(null);
             const [userId, setUserId] = useState(null);
             const [isCodeMode, setIsCodeMode] = useState(false);
@@ -261,7 +260,7 @@
                 }
             }, [input]);
 
-            // First useEffect: Handles Firebase initialization and authentication
+            // Single useEffect to handle Firebase initialization, auth, and data fetching.
             useEffect(() => {
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config is not available.");
@@ -271,66 +270,51 @@
                 const app = window.firebase.initializeApp(firebaseConfig);
                 const authInstance = window.firebase.getAuth(app);
                 const dbInstance = window.firebase.getFirestore(app);
-                setAuth(authInstance);
+                // setAuth(authInstance); // State is not used in this app. I'll remove it.  <--- This line was causing the error.
                 setDb(dbInstance);
 
-                const signIn = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(authInstance, initialAuthToken);
-                        } else {
-                            await signInAnonymously(authInstance);
-                        }
-                    } catch (error) {
-                        console.error("Error signing in:", error);
-                    }
-                };
-
-                signIn();
-
-                const unsubscribe = onAuthStateChanged(authInstance, (user) => {
+                const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
                     if (user) {
                         setUserId(user.uid);
+                        console.log("Authentication successful. User ID:", user.uid);
+                        // Now that we have a user, set up the Firestore listener
+                        const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
+                        const q = query(collection(dbInstance, collectionPath));
+                        
+                        const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
+                            const msgs = [];
+                            querySnapshot.forEach((doc) => {
+                                msgs.push({ ...doc.data(), id: doc.id });
+                            });
+
+                            // Sort messages in JavaScript to ensure correct order
+                            msgs.sort((a, b) => {
+                              const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
+                              const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
+                              return aMillis - bMillis;
+                            });
+                            setMessages(msgs);
+                        });
+                        
                         setIsAuthReady(true);
+                        return () => unsubscribeFirestore(); // Cleanup Firestore listener
                     } else {
-                        // User is signed out or sign-in failed. Resetting state.
-                        setUserId(null);
-                        setIsAuthReady(false);
-                        setMessages([]);
+                        // Sign in anonymously if no user is found.
+                        console.log("Attempting to sign in anonymously...");
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(authInstance, initialAuthToken);
+                            } else {
+                                await signInAnonymously(authInstance);
+                            }
+                        } catch (error) {
+                            console.error("Error signing in:", error);
+                        }
                     }
                 });
 
-                return () => unsubscribe();
-            }, [initialAuthToken, firebaseConfig]);
-
-            // Second useEffect: Sets up the Firestore listener only after authentication is ready
-            useEffect(() => {
-                // We only proceed if `db` and `userId` are set.
-                if (db && userId) {
-                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                    // The query no longer uses orderBy to avoid needing a Firestore index.
-                    const q = query(collection(db, collectionPath));
-
-                    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-                        const msgs = [];
-                        querySnapshot.forEach((doc) => {
-                            msgs.push({ ...doc.data(), id: doc.id });
-                        });
-
-                        // Sort messages in JavaScript to ensure correct order
-                        // This uses a non-optional chaining syntax for compatibility with older Babel versions.
-                        msgs.sort((a, b) => {
-                          const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
-                          const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
-                          return aMillis - bMillis;
-                        });
-                        setMessages(msgs);
-                    });
-
-                    // Cleanup function to detach the listener when the component unmounts or dependencies change
-                    return () => unsubscribe();
-                }
-            }, [db, userId, appId]);
+                return () => unsubscribeAuth(); // Cleanup auth listener
+            }, [initialAuthToken, firebaseConfig, appId]);
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
