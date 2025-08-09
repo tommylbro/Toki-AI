@@ -251,11 +251,8 @@
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
-            
-            // New state to manage the authentication status
             const [isAuthReady, setIsAuthReady] = useState(false);
 
-            // Effect for dynamic textarea height
             useEffect(() => {
                 const textarea = textareaRef.current;
                 if (textarea) {
@@ -264,8 +261,6 @@
                 }
             }, [input]);
 
-            // This useEffect handles Firebase initialization and authentication state changes.
-            // It now explicitly handles the sign-in and waits for the state to be ready.
             useEffect(() => {
                 const initializeFirebase = async () => {
                     if (Object.keys(firebaseConfig).length === 0) {
@@ -280,37 +275,44 @@
                         setDb(dbInstance);
                         setAuth(authInstance);
 
-                        let userCredential;
                         if (initialAuthToken) {
-                            userCredential = await signInWithCustomToken(authInstance, initialAuthToken);
+                            await signInWithCustomToken(authInstance, initialAuthToken);
                         } else {
-                            userCredential = await signInAnonymously(authInstance);
+                            await signInAnonymously(authInstance);
                         }
-                        
-                        setUserId(userCredential.user.uid);
+
+                        onAuthStateChanged(authInstance, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                                setIsAuthReady(true);
+                            } else {
+                                console.log("No user is signed in.");
+                                setIsAuthReady(true);
+                            }
+                        });
+
                     } catch (error) {
                         console.error("Error during Firebase initialization or sign-in:", error);
-                    } finally {
-                        // Mark authentication as ready whether it succeeded or failed
                         setIsAuthReady(true);
                     }
                 };
 
-                initializeFirebase();
-            }, [initialAuthToken, firebaseConfig]);
+                if (!auth) {
+                    initializeFirebase();
+                }
+            }, [initialAuthToken, firebaseConfig, auth]);
 
-            // This useEffect handles fetching messages after a user is authenticated.
             useEffect(() => {
                 if (db && userId) {
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     const q = query(collection(db, collectionPath));
+                    
                     const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
                         const msgs = [];
                         querySnapshot.forEach((doc) => {
                             msgs.push({ ...doc.data(), id: doc.id });
                         });
 
-                        // Sort messages in JavaScript to ensure correct order
                         msgs.sort((a, b) => {
                             const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
                             const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
@@ -339,7 +341,6 @@
                     isCode,
                 };
 
-                // Add user message to Firestore
                 try {
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     await addDoc(collection(db, collectionPath), {
@@ -353,12 +354,10 @@
                 setInput('');
                 setIsAIGenerating(true);
 
-                // We'll pass the messages from state to the API call
                 let chatHistory = messages.map(msg => ({
                     role: msg.role,
                     parts: [{ text: msg.content }]
                 }));
-
                 chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
 
                 const payload = {
@@ -367,7 +366,6 @@
 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${API_KEY}`;
 
-                // Exponential backoff for API calls
                 const fetchWithRetry = async (url, options, retries = 5) => {
                     for (let i = 0; i < retries; i++) {
                         try {
@@ -411,7 +409,6 @@
                         content: aiText,
                     };
 
-                    // Add AI message to Firestore
                     const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
                     await addDoc(collection(db, collectionPath), {
                         ...aiMessage,
@@ -471,7 +468,6 @@
 
                     const result = await response.json();
 
-                    // Safely access nested properties without optional chaining
                     const audioData = result && result.candidates && result.candidates[0] &&
                                      result.candidates[0].content && result.candidates[0].content.parts &&
                                      result.candidates[0].content.parts[0] &&
@@ -636,9 +632,7 @@
             );
         };
 
-        window.onload = function() {
-            ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App, null));
-        };
+        ReactDOM.render(React.createElement(App, null), document.getElementById('root'));
     </script>
 </body>
 </html>
