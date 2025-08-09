@@ -114,8 +114,9 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- API Keys and Models (Change these) ---
-        const API_KEY = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
+        // --- API Keys and Models ---
+        // Leave the API_KEY as an empty string. The Canvas environment will provide it.
+        const API_KEY = "";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -243,7 +244,17 @@
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
             const [isAuthReady, setIsAuthReady] = useState(false);
-            const marked = window.marked; // Get the marked library from the global window object
+            const [firestoreError, setFirestoreError] = useState(null); // New state for Firestore errors
+            
+            // Helper function to safely parse markdown, with a fallback
+            const getParsedMarkdown = (content, isCode) => {
+                if (window.marked) {
+                    const markdown = isCode ? '```javascript\n' + content + '\n```' : content;
+                    return window.marked.parse(markdown);
+                }
+                // Fallback if marked library is not available
+                return isCode ? `<pre><code>${content}</code></pre>` : `<p>${content}</p>`;
+            };
 
             useEffect(() => {
                 const textarea = textareaRef.current;
@@ -253,8 +264,11 @@
                 }
             }, [input]);
 
-            // Combined Firebase initialization and auth state logic
+            // Combined Firebase initialization, auth state, and Firestore listener logic
             useEffect(() => {
+                let unsubscribeAuth = () => {};
+                let unsubscribeFirestore = () => {};
+
                 const initialize = async () => {
                     console.log("Initializing Firebase...");
                     if (Object.keys(firebaseConfig).length === 0) {
@@ -271,61 +285,78 @@
                         const dbInstance = getFirestore(appInstance);
                         setDb(dbInstance);
 
-                        // Sign in with custom token or anonymously
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(authInstance, initialAuthToken);
-                        } else {
-                            await signInAnonymously(authInstance);
-                        }
+                        // Listen for auth state changes
+                        unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
+                            // First, unsubscribe from any previous Firestore listener
+                            unsubscribeFirestore();
+                            setFirestoreError(null);
 
-                        // Use onAuthStateChanged to set the user ID and listen for changes
-                        const unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
                             if (user) {
                                 console.log("User signed in:", user.uid);
                                 setUserId(user.uid);
+                                setIsAuthReady(true);
+                                
+                                // Now that we have a user, set up the Firestore listener
+                                const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
+                                console.log("Setting up Firestore listener for path:", collectionPath);
+                                
+                                const q = query(collection(dbInstance, collectionPath));
+                                
+                                unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
+                                    const msgs = [];
+                                    querySnapshot.forEach((doc) => {
+                                        msgs.push({ ...doc.data(), id: doc.id });
+                                    });
+
+                                    msgs.sort((a, b) => {
+                                        const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
+                                        const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
+                                        return aMillis - bMillis;
+                                    });
+                                    setMessages(msgs);
+                                }, (error) => {
+                                    console.error("Error with Firestore onSnapshot:", error);
+                                    setFirestoreError(error.message);
+                                });
+
                             } else {
-                                console.log("User signed out.");
-                                setUserId(null); // Or keep the anonymous ID
+                                console.log("User signed out or failed to sign in.");
+                                setUserId(crypto.randomUUID());
+                                setIsAuthReady(true);
+                                setMessages([]); // Clear messages if the user logs out
                             }
+                        }, (error) => {
+                            console.error("onAuthStateChanged failed:", error);
+                            setUserId(crypto.randomUUID());
                             setIsAuthReady(true);
+                            setFirestoreError(error.message);
                         });
-                        return () => unsubscribeAuth();
+
+                        // Attempt to sign in
+                        if (initialAuthToken) {
+                            console.log("Attempting sign-in with custom token...");
+                            await signInWithCustomToken(authInstance, initialAuthToken);
+                        } else {
+                            console.log("Attempting anonymous sign-in...");
+                            await signInAnonymously(authInstance);
+                        }
+
                     } catch (error) {
-                        console.error("Error during Firebase initialization:", error);
+                        console.error("Error during Firebase initialization or sign-in:", error);
                         setDb(null);
                         setUserId(crypto.randomUUID());
                         setIsAuthReady(true); // Ensure the app becomes ready even on error
                     }
                 };
+                
                 initialize();
-            }, []); // Empty dependency array means this runs once on mount
-
-            // Firestore message listener
-            useEffect(() => {
-                if (db && userId && isAuthReady) {
-                    console.log("Setting up Firestore listener for user:", userId);
-                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                    const q = query(collection(db, collectionPath));
-                    
-                    const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
-                        const msgs = [];
-                        querySnapshot.forEach((doc) => {
-                            msgs.push({ ...doc.data(), id: doc.id });
-                        });
-
-                        msgs.sort((a, b) => {
-                            const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
-                            const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
-                            return aMillis - bMillis;
-                        });
-                        setMessages(msgs);
-                    }, (error) => {
-                        console.error("Error with Firestore onSnapshot:", error);
-                    });
-                    
-                    return () => unsubscribeFirestore();
-                }
-            }, [db, userId, appId, isAuthReady]); // Re-run if these change
+                
+                // Cleanup function for the effect
+                return () => {
+                    unsubscribeAuth();
+                    unsubscribeFirestore();
+                };
+            }, [appId, firebaseConfig, initialAuthToken]); // Dependencies for re-running the effect
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
@@ -337,15 +368,6 @@
             const handleSendMessage = async (prompt, isCode = false) => {
                 if (!prompt.trim() || !userId) {
                     console.error("Cannot send message: Missing prompt or user ID.");
-                    return;
-                }
-
-                if (!API_KEY) {
-                    console.error("API key is missing. Please provide a valid API key.");
-                    const aiText = "I'm sorry, I can't generate a response. The API key is missing. Please add a valid API key to the `API_KEY` constant in the code.";
-                    const aiMessage = { role: 'ai', content: aiText, };
-                    setMessages(prevMessages => [...prevMessages, aiMessage]);
-                    setIsAIGenerating(false);
                     return;
                 }
                 
@@ -414,7 +436,7 @@
                     throw new Error("Failed to fetch after multiple retries.");
                 };
 
-                let aiText;
+                let aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
                 try {
                     const response = await fetchWithRetry(apiUrl, {
                         method: 'POST',
@@ -428,17 +450,21 @@
                         let errorData;
                         try {
                             errorData = await response.json();
+                            throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error.message}`);
                         } catch (e) {
                             throw new Error(`API error: ${response.status} ${response.statusText} - Could not parse error response as JSON.`);
                         }
-                        throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error.message}`);
                     }
-
+                    
                     const result = await response.json();
                     if (result.candidates && result.candidates.length > 0 &&
                         result.candidates[0].content && result.candidates[0].content.parts &&
                         result.candidates[0].content.parts.length > 0) {
-                        aiText = result.candidates[0].content.parts[0].text;
+                        
+                        // Fix: Iterate through all parts to get the full response
+                        const parts = result.candidates[0].content.parts;
+                        aiText = parts.map(p => p.text).join('');
+                        
                     } else {
                         throw new Error("Invalid or empty response from AI model.");
                     }
@@ -447,7 +473,7 @@
                     if (error.message.includes('401')) {
                         aiText = "I'm sorry, there was an authentication error with the AI service. The API key is likely invalid. Please check and update the `API_KEY` constant in the code.";
                     } else {
-                        aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
+                        aiText = error.message;
                     }
                 } finally {
                     const aiMessage = {
@@ -567,8 +593,14 @@
 
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {!isAuthReady || !marked ? (
+                        {!isAuthReady ? (
                             <LoadingIndicator />
+                        ) : firestoreError ? (
+                            <div className="text-center text-red-400 py-10">
+                                <p>Error connecting to database:</p>
+                                <p className="font-mono mt-2">{firestoreError}</p>
+                                <p className="mt-4 text-sm text-red-300">This often means there's an issue with Firebase permissions.</p>
+                            </div>
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Madison AI.</p>
@@ -587,9 +619,7 @@
                                         }`}>
                                         <div
                                             className="prose prose-sm prose-invert"
-                                            dangerouslySetInnerHTML={{
-                                                __html: msg.isCode ? marked.parse('```javascript\n' + msg.content + '\n```') : marked.parse(msg.content)
-                                            }}
+                                            dangerouslySetInnerHTML={{ __html: getParsedMarkdown(msg.content, msg.isCode) }}
                                         ></div>
                                         {msg.role === 'ai' && !isAIGenerating && (
                                             <button
@@ -626,13 +656,13 @@
                                 className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
                                 placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
                                 rows={1}
-                                disabled={!isAuthReady}
+                                disabled={!isAuthReady || firestoreError}
                             ></textarea>
                             <div className="absolute right-2 flex items-center space-x-2">
                                 <button
                                     className="p-2 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                     onClick={() => setIsCodeMode(!isCodeMode)}
-                                    disabled={!isAuthReady}
+                                    disabled={!isAuthReady || firestoreError}
                                 >
                                     {isCodeMode ? (
                                         <React.Fragment>
@@ -650,7 +680,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleExplainCode}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError}
                                     >
                                         <CodeIcon size={16} />
                                         <span className="font-semibold">✨ Explain Code</span>
@@ -659,7 +689,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleRefineWriting}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError}
                                     >
                                         <WandIcon size={16} />
                                         <span className="font-semibold">✨ Refine Writing</span>
