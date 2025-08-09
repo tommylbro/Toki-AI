@@ -245,11 +245,14 @@
             const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
             const [isAuthReady, setIsAuthReady] = useState(false);
+            const [app, setApp] = useState(null);
+            const [auth, setAuth] = useState(null);
             const [db, setDb] = useState(null);
             const [userId, setUserId] = useState(null);
             const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
+            const [isLoading, setIsLoading] = useState(true);
 
             // Effect for dynamic textarea height
             useEffect(() => {
@@ -260,61 +263,73 @@
                 }
             }, [input]);
 
-            // Single useEffect to handle Firebase initialization, auth, and data fetching.
+            // 1. Initialize Firebase app and services
             useEffect(() => {
                 if (Object.keys(firebaseConfig).length === 0) {
                     console.error("Firebase config is not available.");
                     return;
                 }
-
-                const app = window.firebase.initializeApp(firebaseConfig);
-                const authInstance = window.firebase.getAuth(app);
-                const dbInstance = window.firebase.getFirestore(app);
-                // setAuth(authInstance); // State is not used in this app. I'll remove it.  <--- This line was causing the error.
+                const appInstance = window.firebase.initializeApp(firebaseConfig);
+                const authInstance = window.firebase.getAuth(appInstance);
+                const dbInstance = window.firebase.getFirestore(appInstance);
+                setApp(appInstance);
+                setAuth(authInstance);
                 setDb(dbInstance);
+            }, [firebaseConfig]);
 
-                const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
+            // 2. Listen for auth state changes and sign in
+            useEffect(() => {
+                if (!auth) return;
+
+                const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         setUserId(user.uid);
                         console.log("Authentication successful. User ID:", user.uid);
-                        // Now that we have a user, set up the Firestore listener
-                        const collectionPath = `/artifacts/${appId}/users/${user.uid}/messages`;
-                        const q = query(collection(dbInstance, collectionPath));
-                        
-                        const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
-                            const msgs = [];
-                            querySnapshot.forEach((doc) => {
-                                msgs.push({ ...doc.data(), id: doc.id });
-                            });
-
-                            // Sort messages in JavaScript to ensure correct order
-                            msgs.sort((a, b) => {
-                              const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
-                              const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
-                              return aMillis - bMillis;
-                            });
-                            setMessages(msgs);
-                        });
-                        
                         setIsAuthReady(true);
-                        return () => unsubscribeFirestore(); // Cleanup Firestore listener
                     } else {
-                        // Sign in anonymously if no user is found.
                         console.log("Attempting to sign in anonymously...");
                         try {
                             if (initialAuthToken) {
-                                await signInWithCustomToken(authInstance, initialAuthToken);
+                                await signInWithCustomToken(auth, initialAuthToken);
                             } else {
-                                await signInAnonymously(authInstance);
+                                await signInAnonymously(auth);
                             }
                         } catch (error) {
                             console.error("Error signing in:", error);
                         }
                     }
+                    setIsLoading(false);
                 });
 
-                return () => unsubscribeAuth(); // Cleanup auth listener
-            }, [initialAuthToken, firebaseConfig, appId]);
+                return () => unsubscribeAuth();
+            }, [auth, initialAuthToken]);
+
+            // 3. Set up Firestore listener after authentication is ready
+            useEffect(() => {
+                if (!isAuthReady || !db || !userId) {
+                    return;
+                }
+                
+                const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                const q = query(collection(db, collectionPath));
+
+                const unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
+                    const msgs = [];
+                    querySnapshot.forEach((doc) => {
+                        msgs.push({ ...doc.data(), id: doc.id });
+                    });
+
+                    // Sort messages in JavaScript to ensure correct order
+                    msgs.sort((a, b) => {
+                      const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
+                      const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
+                      return aMillis - bMillis;
+                    });
+                    setMessages(msgs);
+                });
+
+                return () => unsubscribeFirestore(); // Cleanup Firestore listener
+            }, [isAuthReady, db, userId, appId]);
 
             useEffect(() => {
                 // Scroll to the bottom of the messages div whenever messages change
@@ -495,6 +510,16 @@
                 }
             };
 
+            const LoadingIndicator = () => (
+                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
+                    <div className="dot-flashing mb-4"></div>
+                    <p>
+                        {isLoading ? "Loading app..." : "Authenticating..."}
+                    </p>
+                </div>
+            );
+
+
             return (
                 <div className="flex flex-col h-full bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
                     {/* Header */}
@@ -510,40 +535,43 @@
 
                     {/* Chat Window */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {messages.length === 0 && !isAIGenerating && (
+                        {isLoading || !isAuthReady ? (
+                            <LoadingIndicator />
+                        ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Madison AI.</p>
                                 <p>Ask me to refine your writing or explain code.</p>
                             </div>
-                        )}
-                        {messages.map((msg, index) => (
-                            <div
-                                key={index}
-                                className={`flex items-start space-x-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
-                            >
-                                {msg.role === 'ai' && <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />}
-                                <div className={`relative p-3 rounded-xl max-w-[80%] ${msg.role === 'user'
-                                    ? 'bg-indigo-600 text-white rounded-br-none'
-                                    : 'bg-gray-700 text-gray-100 rounded-bl-none'
-                                    }`}>
-                                    <div
-                                        className="prose prose-sm prose-invert"
-                                        dangerouslySetInnerHTML={{
-                                            __html: msg.isCode ? marked.parse('```javascript\n' + msg.content + '\n```') : marked.parse(msg.content)
-                                        }}
-                                    ></div>
-                                    {msg.role === 'ai' && !isAIGenerating && (
-                                        <button
-                                            onClick={() => handleTextToSpeech(msg.content)}
-                                            className="absolute bottom-1 right-1 bg-gray-600 p-1 rounded-full text-gray-200 hover:text-white transition-colors"
-                                        >
-                                            <Volume2Icon size={16} />
-                                        </button>
-                                    )}
+                        ) : (
+                            messages.map((msg, index) => (
+                                <div
+                                    key={index}
+                                    className={`flex items-start space-x-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
+                                >
+                                    {msg.role === 'ai' && <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />}
+                                    <div className={`relative p-3 rounded-xl max-w-[80%] ${msg.role === 'user'
+                                        ? 'bg-indigo-600 text-white rounded-br-none'
+                                        : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                                        }`}>
+                                        <div
+                                            className="prose prose-sm prose-invert"
+                                            dangerouslySetInnerHTML={{
+                                                __html: msg.isCode ? marked.parse('```javascript\n' + msg.content + '\n```') : marked.parse(msg.content)
+                                            }}
+                                        ></div>
+                                        {msg.role === 'ai' && !isAIGenerating && (
+                                            <button
+                                                onClick={() => handleTextToSpeech(msg.content)}
+                                                className="absolute bottom-1 right-1 bg-gray-600 p-1 rounded-full text-gray-200 hover:text-white transition-colors"
+                                            >
+                                                <Volume2Icon size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {msg.role === 'user' && <UserIcon className="flex-shrink-0 text-gray-400 mt-1" />}
                                 </div>
-                                {msg.role === 'user' && <UserIcon className="flex-shrink-0 text-gray-400 mt-1" />}
-                            </div>
-                        ))}
+                            ))
+                        )}
                         {isAIGenerating && (
                             <div className="flex items-start space-x-3">
                                 <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />
