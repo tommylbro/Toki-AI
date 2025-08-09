@@ -274,6 +274,20 @@
                 setAuth(authInstance);
                 setDb(dbInstance);
 
+                const signIn = async () => {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(authInstance, initialAuthToken);
+                        } else {
+                            await signInAnonymously(authInstance);
+                        }
+                    } catch (error) {
+                        console.error("Error signing in:", error);
+                    }
+                };
+
+                signIn();
+
                 const unsubscribe = onAuthStateChanged(authInstance, (user) => {
                     if (user) {
                         setUserId(user.uid);
@@ -291,19 +305,10 @@
                             setMessages(msgs);
                         });
                     } else {
-                        // User is signed out. Sign in.
-                        const signIn = async () => {
-                           try {
-                               if (initialAuthToken) {
-                                   await signInWithCustomToken(authInstance, initialAuthToken);
-                               } else {
-                                   await signInAnonymously(authInstance);
-                               }
-                           } catch (error) {
-                               console.error("Error signing in:", error);
-                           }
-                        };
-                        signIn();
+                        // User is signed out or sign-in failed. Resetting state.
+                        setUserId(null);
+                        setIsAuthReady(false);
+                        setMessages([]);
                     }
                 });
 
