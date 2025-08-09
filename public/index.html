@@ -335,37 +335,46 @@
             }, [messages]);
 
             const handleSendMessage = async (prompt, isCode = false) => {
-                if (!prompt.trim() || !userId || !db) {
-                    console.error("Cannot send message: Missing prompt, user ID, or database instance.");
+                if (!prompt.trim() || !userId) {
+                    console.error("Cannot send message: Missing prompt or user ID.");
                     return;
                 }
                 
-                // Add user message to Firestore
-                try {
-                    const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                    await addDoc(collection(db, collectionPath), {
-                        role: 'user',
-                        content: prompt,
-                        isCode,
-                        timestamp: serverTimestamp(),
-                    });
-                } catch (error) {
-                    console.error("Error writing user message to Firestore:", error);
-                    setIsAIGenerating(false);
-                    return;
-                }
+                // Add user message to state immediately for responsiveness
+                const newUserMessage = {
+                    role: 'user',
+                    content: prompt,
+                    isCode,
+                    timestamp: new Date(),
+                };
 
+                setMessages(prevMessages => [...prevMessages, newUserMessage]);
                 setInput('');
                 setIsAIGenerating(true);
+                
+                // Persist to Firestore if a db instance is available
+                if (db) {
+                    try {
+                        const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                        await addDoc(collection(db, collectionPath), {
+                            ...newUserMessage,
+                            timestamp: serverTimestamp(),
+                        });
+                    } catch (error) {
+                        console.error("Error writing user message to Firestore:", error);
+                        // If Firestore fails, the message will still be in the UI via the state update
+                    }
+                }
 
-                const currentChatHistory = messages.map(msg => ({
+                // Prepare the chat history for the AI API call
+                const chatHistoryForAPI = messages.map(msg => ({
                     role: msg.role,
                     parts: [{ text: msg.content }]
                 }));
-                currentChatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+                chatHistoryForAPI.push({ role: 'user', parts: [{ text: prompt }] });
 
                 const payload = {
-                    contents: currentChatHistory,
+                    contents: chatHistoryForAPI,
                 };
 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${API_KEY}`;
@@ -426,15 +435,21 @@
                         content: aiText,
                     };
 
-                    try {
-                        const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                        await addDoc(collection(db, collectionPath), {
-                            ...aiMessage,
-                            timestamp: serverTimestamp(),
-                        });
-                    } catch (firestoreError) {
-                        console.error("Error writing AI message to Firestore:", firestoreError);
+                    if (db) {
+                         try {
+                            const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
+                            await addDoc(collection(db, collectionPath), {
+                                ...aiMessage,
+                                timestamp: serverTimestamp(),
+                            });
+                        } catch (firestoreError) {
+                            console.error("Error writing AI message to Firestore:", firestoreError);
+                        }
+                    } else {
+                        // In local mode, just add the AI message to the state
+                        setMessages(prevMessages => [...prevMessages, aiMessage]);
                     }
+                    
                     setIsAIGenerating(false);
                 }
             };
