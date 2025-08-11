@@ -524,12 +524,15 @@
                             body: JSON.stringify(payload)
                         });
                         const result = await response.json();
-                        const base64Data = (result.predictions && result.predictions[0] && result.predictions[0].bytesBase64Encoded);
-                        if (base64Data) {
+                        
+                        // --- UPDATED ERROR HANDLING LOGIC ---
+                        if (result && result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+                            const base64Data = result.predictions[0].bytesBase64Encoded;
                             const imageUrl = `data:image/png;base64,${base64Data}`;
                             aiText = `[Image generated from prompt: "${imagePrompt}"]\n\n![Generated Image](${imageUrl})`;
                         } else {
-                            throw new Error("Invalid or empty image data in response.");
+                            console.error("API response for image generation was invalid:", result);
+                            aiText = `Error generating image: The response did not contain valid image data. Please try a different prompt.`;
                         }
                     } catch (error) {
                         console.error("Error with image generation API:", error);
