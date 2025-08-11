@@ -111,8 +111,8 @@
         window.initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         // --- API Keys and Models ---
-        // Leave the API_KEY as an empty string. The Canvas environment will provide it.
-        window.API_KEY = "";
+        // Use the API key from the environment
+        window.API_KEY = typeof __api_key !== 'undefined' ? __api_key : "";
         window.TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         window.TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
