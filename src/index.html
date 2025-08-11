@@ -385,7 +385,7 @@
                     contents: chatHistoryForAPI,
                 };
                 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TEXT_MODEL}:generateContent`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TEXT_MODEL}:generateContent?key=${window.API_KEY}`;
                 
                 const fetchWithRetry = async (url, options, retries = 5) => {
                     for (let i = 0; i < retries; i++) {
@@ -450,8 +450,8 @@
                     }
                 } catch (error) {
                     console.error("Error fetching AI response:", error);
-                    if (error.message.includes('401')) {
-                        aiText = "I'm sorry, there was an authentication error with the AI service. The API key is likely invalid. Please check and update the `API_KEY` constant in the code.";
+                    if (error.message.includes('401') || error.message.includes('403')) {
+                        aiText = "I'm sorry, there was an authentication error with the AI service. The API key is likely invalid or missing. Please check and update the `API_KEY` constant in the code.";
                     } else {
                         aiText = error.message;
                     }
@@ -516,7 +516,7 @@
                     model: window.TTS_MODEL
                 };
 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TTS_MODEL}:generateContent`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TTS_MODEL}:generateContent?key=${window.API_KEY}`;
 
                 try {
                     const response = await fetch(apiUrl, {
