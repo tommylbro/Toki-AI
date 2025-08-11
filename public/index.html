@@ -20,6 +20,7 @@
         import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // This script is for loading Firebase. The main app script will use these globals.
+        // The names here must match the names used in the React destructuring to be available.
         window.initializeApp = initializeApp;
         window.getAuth = getAuth;
         window.signInWithCustomToken = signInWithCustomToken;
@@ -116,7 +117,7 @@
 
         // --- API Keys and Models ---
         // Leave the API_KEY as an empty string. The Canvas environment will provide it.
-        const API_KEY = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g";
+        const API_KEY = "";
         const TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -579,7 +580,7 @@
             );
 
             return (
-                <div className="flex flex-col h-full bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
+                <div className="flex flex-col h-[calc(100vh-2rem)] bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
                     {/* Header */}
                     <div className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
                         <div className="flex items-center space-x-2">
