@@ -112,7 +112,7 @@
         
         // --- API Keys and Models ---
         // Use the API key from the environment
-        window.API_KEY = typeof __api_key !== 'undefined' ? __api_key : "";
+        window.API_KEY = typeof __api_key !== 'undefined' ? __api_key : "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
         window.TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         window.TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -245,6 +245,7 @@
             const textareaRef = useRef(null);
             const [isAuthReady, setIsAuthReady] = useState(false);
             const [firestoreError, setFirestoreError] = useState(null);
+            const [apiKeyError, setApiKeyError] = useState('');
             
             // Helper function to safely parse markdown, with a fallback
             const getParsedMarkdown = (content, isCode) => {
@@ -314,6 +315,15 @@
                 };
             }, []);
 
+            // Check for API key on load
+            useEffect(() => {
+                if (!window.API_KEY || window.API_KEY.length === 0) {
+                    setApiKeyError("The API key is missing. Please ensure your environment is configured with a valid API key.");
+                } else {
+                    setApiKeyError('');
+                }
+            }, []);
+
             // Firestore data listener
             useEffect(() => {
                 if (db && userId && isAuthReady) {
@@ -349,6 +359,15 @@
             const handleSendMessage = async (prompt, isCode = false) => {
                 if (!prompt.trim() || !userId) {
                     console.error("Cannot send message: Missing prompt or user ID.");
+                    return;
+                }
+
+                if (apiKeyError) {
+                    setMessages(prevMessages => [...prevMessages, {
+                        role: 'ai',
+                        content: apiKeyError,
+                        isCode: false,
+                    }]);
                     return;
                 }
                 
@@ -585,6 +604,12 @@
                                 <p className="font-mono mt-2">{firestoreError}</p>
                                 <p className="mt-4 text-sm text-red-300">This often means there's an issue with Firebase permissions.</p>
                             </div>
+                        ) : apiKeyError ? (
+                            <div className="text-center text-red-400 py-10">
+                                <p>API Key Error:</p>
+                                <p className="font-mono mt-2">{apiKeyError}</p>
+                                <p className="mt-4 text-sm text-red-300">Please ensure the `__api_key` environment variable is set correctly.</p>
+                            </div>
                         ) : messages.length === 0 && !isAIGenerating ? (
                             <div className="text-center text-gray-500 py-10">
                                 <p>Start a conversation with Toki AI.</p>
@@ -640,13 +665,13 @@
                                 className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
                                 placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
                                 rows={1}
-                                disabled={!isAuthReady || firestoreError}
+                                disabled={!isAuthReady || firestoreError || apiKeyError}
                             ></textarea>
                             <div className="absolute right-2 flex items-center space-x-2">
                                 <button
                                     className="p-2 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                     onClick={() => setIsCodeMode(!isCodeMode)}
-                                    disabled={!isAuthReady || firestoreError}
+                                    disabled={!isAuthReady || firestoreError || apiKeyError}
                                 >
                                     {isCodeMode ? (
                                         <React.Fragment>
@@ -664,7 +689,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleExplainCode}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError || apiKeyError}
                                     >
                                         <CodeIcon size={16} />
                                         <span className="font-semibold">✨ Explain Code</span>
@@ -673,7 +698,7 @@
                                     <button
                                         className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
                                         onClick={handleRefineWriting}
-                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError}
+                                        disabled={isAIGenerating || !input.trim() || !isAuthReady || firestoreError || apiKeyError}
                                     >
                                         <WandIcon size={16} />
                                         <span className="font-semibold">✨ Refine Writing</span>
