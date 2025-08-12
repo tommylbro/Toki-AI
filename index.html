@@ -525,10 +525,10 @@
             isAIGenerating = true;
             showLoadingIndicator(true);
 
-            let canvasContentText = "Error generating document.";
+            let canvasContentText = `Error generating document. Please try a different prompt or try again later.`;
 
             const payload = {
-                contents: [{ parts: [{ text: `Generate content for a canvas. The user request is: "${prompt}". The content type is ${type}. Respond with the full content of the canvas document, including the title and id. The content should be a complete, self-contained block of Markdown or code. Do not include any conversational text outside the canvas. The format should be a single <immersive> tag with the content inside.` }] }],
+                contents: [{ parts: [{ text: `Generate content for a canvas. The user request is: "${prompt}". The content type is ${type}. Respond with the full content of the canvas document. The content should be a complete, self-contained block of Markdown or code. Do not include any conversational text outside the canvas. Do not include <immersive> tags. Just provide the raw content.` }] }],
             };
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
 
@@ -545,13 +545,41 @@
                 canvasContentText = `Error generating canvas content: ${error.message}`;
             }
 
-            const immersiveMatch = canvasContentText.match(/<immersive\s+id="([^"]+)"\s+type="([^"]+)"\s+title="([^"]+)">\s*([\s\S]*?)<\/immersive>/);
-            const content = immersiveMatch ? immersiveMatch[4].trim() : canvasContentText;
-            const title = immersiveMatch ? immersiveMatch[3] : "Generated Document";
-
-            showCanvas(content, title);
+            const title = type === 'code' ? 'Generated Code' : 'Generated Document';
+            showCanvas(canvasContentText, title);
             showLoadingIndicator(false);
             isAIGenerating = false;
+        }
+
+        async function handleExplainCode(code) {
+             if (!code.trim()) {
+                 alert("Please provide some code to explain.");
+                 return;
+             }
+
+             isAIGenerating = true;
+             showLoadingIndicator(true, 'Explaining code...');
+
+             let explanationText = "I'm sorry, I couldn't explain the code at the moment. Please try again later.";
+             
+             const prompt = `Explain the following code in a clear and concise manner. Use Markdown for formatting.
+             
+             \`\`\`
+             ${code}
+             \`\`\``;
+
+             try {
+                const response = await generateText(prompt);
+                explanationText = response;
+             } catch (error) {
+                console.error("Error explaining code:", error);
+                explanationText = `Error explaining code: ${error.message}`;
+             }
+
+             // Display the explanation in the canvas
+             showCanvas(explanationText, 'Code Explanation');
+             showLoadingIndicator(false);
+             isAIGenerating = false;
         }
         
         async function handleSpeak(text) {
