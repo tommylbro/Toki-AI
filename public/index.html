@@ -418,13 +418,16 @@
         async function generateImage(prompt) {
             let aiImage = null;
             let aiText = `I'm sorry, I couldn't generate an image at the moment. Please try again later.`;
-
             const payload = {
-                instances: { prompt: prompt },
-                parameters: { "sampleCount": 1}
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    responseModalities: ['TEXT', 'IMAGE']
+                },
             };
             const apiKey = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`;
 
             try {
                 const response = await fetchWithRetry(apiUrl, {
@@ -433,7 +436,6 @@
                     body: JSON.stringify(payload)
                 });
                 
-                // Check for a successful response status
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error("Image generation API error:", errorData);
@@ -442,7 +444,7 @@
                 }
 
                 const result = await response.json();
-                const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
                 if (base64Data) {
                     aiImage = `data:image/png;base64,${base64Data}`;
                     aiText = `Here is the image you requested.`;
