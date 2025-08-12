@@ -6,6 +6,9 @@
     <title>Toki AI</title>
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Third-party library for markdown rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
@@ -13,65 +16,27 @@
             background-color: #1a202c;
             color: #e2e8f0;
         }
-        .prose-sm {
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }
-        .prose-sm h1 {
-            font-size: 1.5em;
-        }
-        .prose-sm h2 {
-            font-size: 1.25em;
-        }
-        .prose-sm h3 {
-            font-size: 1.1em;
-        }
-        .prose-sm ul {
-            list-style-type: disc;
-            padding-left: 1.5em;
-        }
-        .prose-sm ol {
-            list-style-type: decimal;
-            padding-left: 1.5em;
-        }
-        .prose-sm pre {
-            background-color: #2d3748;
-            padding: 1em;
-            border-radius: 0.5em;
-            overflow-x: auto;
-        }
-        .prose-sm code {
-            font-size: 0.8em;
-            background-color: #2d3748;
-            padding: 0.2em 0.4em;
-            border-radius: 0.25em;
-        }
-        .prose-sm pre code {
-            padding: 0;
-            background-color: transparent;
-        }
-        .prose-sm p, .prose-sm li {
-            margin-bottom: 0.5em;
-        }
-        .prose-sm strong {
-            font-weight: 600;
-        }
+
         /* Custom scrollbar for better aesthetics */
         .custom-scrollbar::-webkit-scrollbar {
             width: 8px;
         }
+
         .custom-scrollbar::-webkit-scrollbar-track {
             background: #1a202c;
         }
+
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background-color: #4a5568;
             border-radius: 4px;
             border: 2px solid #1a202c;
         }
+
         .custom-scrollbar {
             scrollbar-width: thin;
             scrollbar-color: #4a5568 #1a202c;
         }
+        
         .dot-flashing {
             position: relative;
             width: 10px;
@@ -116,407 +81,168 @@
                 background-color: #e2e8f0;
             }
         }
+        .prose-sm {
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .prose-sm h1 { font-size: 1.5em; }
+        .prose-sm h2 { font-size: 1.25em; }
+        .prose-sm h3 { font-size: 1.1em; }
+        .prose-sm ul { list-style-type: disc; padding-left: 1.5em; }
+        .prose-sm ol { list-style-type: decimal; padding-left: 1.5em; }
+        .prose-sm pre { background-color: #2d3748; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+        .prose-sm code { font-size: 0.8em; background-color: #2d3748; padding: 0.2em 0.4em; border-radius: 0.25em; }
+        .prose-sm pre code { padding: 0; background-color: transparent; }
+        .prose-sm p, .prose-sm li { margin-bottom: 0.5em; }
+        .prose-sm strong { font-weight: 600; }
+
+        /* The canvas container for dynamic content */
+        #canvas-container {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200">
-
-    <!-- Main Container -->
-    <div id="app" class="h-screen flex flex-col justify-center items-center p-4">
-        <div class="w-full max-w-4xl h-full flex flex-col">
-            <!-- Chat Window / Canvas Container -->
-            <div id="content-container" class="flex-1 overflow-hidden">
-                <!-- Content will be rendered here dynamically -->
-            </div>
-
-            <!-- Controls and Input -->
-            <div id="controls-container" class="flex-shrink-0 mt-4 p-4 bg-gray-900 rounded-lg shadow-xl flex items-center justify-between">
-                <!-- Controls will be rendered here dynamically -->
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
-    <script type="module">
-        // Global variables for Firebase configuration, provided by the runtime
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // Firebase imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Constants for API models
-        window.TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
-        window.IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002";
-        window.IMAGE_ANALYSIS_MODEL = "gemini-2.5-flash-preview-05-20";
-        window.TTS_MODEL = "gemini-2.5-flash-preview-tts";
-        window.API_KEY = ""; // Runtime will provide this
-
-        // Firebase Initialization
-        let app, auth, db, userId;
-        let isAuthReady = false;
-        let firestoreError = null;
-        let unsubscribeFirestore = () => {};
-
-        if (Object.keys(firebaseConfig).length > 0) {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                } else {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                        userId = auth.currentUser.uid;
-                    } catch (error) {
-                        console.error("Firebase Auth Error:", error);
-                        firestoreError = error.message;
-                    }
-                }
-                isAuthReady = true;
-                // Once authenticated, render the app and set up the Firestore listener
-                setupApp();
-            });
-        } else {
-            console.warn("Firebase config not found. Running in offline mode.");
-            userId = crypto.randomUUID();
-            isAuthReady = true;
-            setupApp();
-        }
-
-        // State management
-        let messages = [];
-        let isAIGenerating = false;
-        let input = '';
-        let selectedImage = null;
-        let mode = 'chat'; // 'chat', 'canvas'
-        let rawCanvasContent = '';
-
-        // DOM elements
-        const contentContainer = document.getElementById('content-container');
-        const controlsContainer = document.getElementById('controls-container');
-
-        // Helper function to safely parse markdown
-        const getParsedMarkdown = (content) => {
-            if (window.marked) {
-                // Remove the markdown immersive tags for rendering
-                const immersiveRegex = /<immersive[^>]*>([\s\S]*?)<\/immersive>/g;
-                const cleanedContent = content.replace(immersiveRegex, '$1');
-                return window.marked.parse(cleanedContent);
-            }
-            return `<p>${content}</p>`;
-        };
-
-        // UI rendering functions
-        const renderChat = () => {
-            contentContainer.innerHTML = `
-                <div class="flex flex-col h-full bg-gray-800 rounded-lg shadow-xl overflow-hidden">
-                    <div id="messages-container" class="flex-1 p-6 space-y-4 overflow-y-auto custom-scrollbar">
-                        <!-- Messages will be rendered here dynamically -->
-                        <div id="messages-end"></div>
-                    </div>
-                    <div id="chat-input-container" class="p-4 border-t border-gray-700 bg-gray-800">
-                        <!-- Chat input elements will be added here -->
+    <div id="app-container" class="h-screen flex flex-col justify-center items-center p-4">
+        <div id="chat-container" class="w-full max-w-4xl h-full flex flex-col bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+            <!-- Chat messages display area -->
+            <div id="chat-messages" class="flex-1 p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                <!-- Welcome message -->
+                <div class="flex flex-col items-center justify-center text-gray-400 text-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-4">
+                        <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
+                    </svg>
+                    <h2 class="text-xl font-semibold">Start a conversation</h2>
+                    <p>Type a message below to begin.</p>
+                    <div class="mt-8">
+                        <h3 class="text-lg font-semibold">Special Commands:</h3>
+                        <ul class="list-disc list-inside text-left">
+                            <li><strong>Generate Image:</strong> <code>generate image of [your prompt]</code></li>
+                            <li><strong>Generate Document:</strong> <code>create a writing document of [your topic]</code></li>
+                            <li><strong>Generate Code:</strong> <code>create a code document of [your code request]</code></li>
+                        </ul>
                     </div>
                 </div>
-            `;
-            const messagesContainer = document.getElementById('messages-container');
-            const messagesEnd = document.getElementById('messages-end');
-            
-            if (messages.length === 0) {
-                messagesContainer.innerHTML = `
-                    <div class="flex-1 flex flex-col items-center justify-center text-gray-400 text-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-4">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                            <line x1="13" x2="13" y1="12" y2="12" />
-                            <line x1="9" x2="9" y1="12" y2="12" />
-                        </svg>
-                        <h2 class="text-xl font-semibold">Start a conversation</h2>
-                        <p>Type a message below to begin.</p>
-                        <div class="mt-8">
-                            <h3 class="text-lg font-semibold">Special Commands:</h3>
-                            <ul class="list-disc list-inside text-left">
-                                <li><strong>Generate Image:</strong> <code>generate image of [your prompt]</code></li>
-                                <li><strong>Generate Document:</strong> <code>create a writing document of [your topic]</code></li>
-                                <li><strong>Generate Code:</strong> <code>create a code document of [your code request]</code></li>
-                            </ul>
-                        </div>
-                    </div>
-                `;
-            } else {
-                messages.forEach(msg => {
-                    messagesContainer.appendChild(createMessageElement(msg));
-                });
-            }
-
-            if (isAIGenerating) {
-                const loadingHtml = `
-                    <div class="flex items-center space-x-2 p-4 rounded-xl my-2 max-w-3xl bg-gray-700 text-gray-100">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
-                        </svg>
-                        <div class="dot-flashing"></div>
-                    </div>
-                `;
-                messagesContainer.innerHTML += loadingHtml;
-            }
-
-            if (messagesEnd) {
-                messagesEnd.scrollIntoView({ behavior: 'smooth' });
-            }
-
-            renderChatInput();
-        };
-
-        const createMessageElement = (message) => {
-            const isUser = message.role === 'user';
-            const isAI = message.role === 'ai';
-            const messageClass = isUser ? 'bg-blue-600 text-white self-end' : 'bg-gray-700 text-gray-100 self-start';
-            const icon = isUser ? `
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                </svg>
-            ` : `
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
-                </svg>
-            `;
-            const timestamp = message.timestamp ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString() : '';
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `flex items-start space-x-2 p-4 rounded-xl shadow-lg my-2 max-w-3xl w-full ${messageClass}`;
-
-            const iconDiv = document.createElement('div');
-            iconDiv.className = 'flex-shrink-0 mt-1';
-            iconDiv.innerHTML = icon;
-            messageDiv.appendChild(iconDiv);
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'flex-grow';
-
-            const proseDiv = document.createElement('div');
-            proseDiv.className = 'prose-sm prose-invert';
-            
-            // Handle image rendering in the chat bubble
-            const imageMatch = message.content?.match(/!\[Generated Image\]\((.*?)\)/);
-            if (imageMatch) {
-                const textBeforeImage = message.content.replace(imageMatch[0], '');
-                proseDiv.innerHTML = getParsedMarkdown(textBeforeImage);
-                const imgElement = document.createElement('img');
-                imgElement.src = imageMatch[1];
-                imgElement.alt = 'Generated by AI';
-                imgElement.className = 'mt-4 rounded-lg shadow-md max-w-full h-auto';
-                proseDiv.appendChild(imgElement);
-            } else {
-                proseDiv.innerHTML = getParsedMarkdown(message.content);
-            }
-
-            // Append user uploaded image if it exists
-            if (isUser && message.image) {
-                const userImage = document.createElement('img');
-                userImage.src = message.image;
-                userImage.alt = 'User upload';
-                userImage.className = 'mt-2 rounded-lg shadow-md max-w-full h-auto';
-                proseDiv.appendChild(userImage);
-            }
-
-            contentDiv.appendChild(proseDiv);
-            messageDiv.appendChild(contentDiv);
-
-            const timestampDiv = document.createElement('div');
-            timestampDiv.className = 'flex-shrink-0 text-xs text-gray-400 mt-1';
-            timestampDiv.textContent = timestamp;
-            messageDiv.appendChild(timestampDiv);
-            
-            if (isAI) {
-                const speakButton = document.createElement('button');
-                speakButton.onclick = () => window.handleSpeak(message.content);
-                speakButton.className = 'flex-shrink-0 text-gray-400 hover:text-white ml-2';
-                speakButton.innerHTML = `
+                <!-- Loading indicator -->
+                <div id="loading-indicator" class="hidden flex items-center space-x-2 p-4 rounded-xl my-2 max-w-3xl bg-gray-700 text-gray-100">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
                     </svg>
-                `;
-                messageDiv.appendChild(speakButton);
-            }
-
-            return messageDiv;
-        };
-        
-
-        const renderChatInput = () => {
-            const chatInputContainer = document.getElementById('chat-input-container');
-            if (!chatInputContainer) return;
-            chatInputContainer.innerHTML = '';
-            
-            const inputHtml = `
-                ${firestoreError ? `<div class="text-red-400 text-sm mb-2">Error: ${firestoreError}</div>` : ''}
-                ${selectedImage ? `
-                    <div class="relative mb-2 w-24 h-24 rounded-lg overflow-hidden border-2 border-gray-600">
-                        <img src="${selectedImage}" alt="Preview" class="w-full h-full object-cover" />
-                        <button onclick="handleRemoveImage()" class="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </button>
+                    <div class="flex space-x-1">
+                        <div class="dot-flashing"></div>
+                        <div class="dot-flashing" style="animation-delay: 0.2s;"></div>
+                        <div class="dot-flashing" style="animation-delay: 0.4s;"></div>
                     </div>
-                ` : ''}
+                </div>
+            </div>
+
+            <!-- Chat input area -->
+            <div class="p-4 border-t border-gray-700 bg-gray-800">
+                <div id="image-preview" class="hidden relative mb-2 w-24 h-24 rounded-lg overflow-hidden border-2 border-gray-600">
+                    <img id="preview-image" src="" alt="Preview" class="w-full h-full object-cover">
+                    <button id="remove-image-btn" class="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
                 <div class="flex items-center space-x-2">
-                    <button id="image-upload-btn" class="p-3 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors" ${isAIGenerating || !isAuthReady || firestoreError ? 'disabled' : ''}>
+                    <input type="file" id="image-file-input" class="hidden" accept="image/*">
+                    <button id="upload-image-btn" class="p-3 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                         </svg>
                     </button>
-                    <input type="file" id="image-file-input" class="hidden" accept="image/*" />
-                    <textarea id="chat-input" class="flex-1 p-3 bg-gray-700 rounded-xl resize-none max-h-32 overflow-y-auto custom-scrollbar focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Type a message..." ${isAIGenerating ? 'disabled' : ''}>${input}</textarea>
-                    <button id="send-message-btn" class="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" ${isAIGenerating || (!input.trim() && !selectedImage) || !isAuthReady || firestoreError ? 'disabled' : ''}>
+                    <textarea id="chat-input" class="flex-1 p-3 bg-gray-700 rounded-xl resize-none max-h-32 overflow-y-auto custom-scrollbar focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Type a message..." rows="1"></textarea>
+                    <button id="send-btn" class="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 2 11 13" /><path d="m22 2-7 20-4-9-9-4 20-7Z" />
                         </svg>
                     </button>
                 </div>
-            `;
-            chatInputContainer.innerHTML = inputHtml;
-
-            const chatInput = document.getElementById('chat-input');
-            const imageFileInput = document.getElementById('image-file-input');
-            const imageUploadBtn = document.getElementById('image-upload-btn');
-            const sendMessageBtn = document.getElementById('send-message-btn');
-
-            chatInput.addEventListener('input', (e) => {
-                input = e.target.value;
-                e.target.style.height = 'auto';
-                e.target.style.height = `${e.target.scrollHeight}px`;
-                sendMessageBtn.disabled = isAIGenerating || (!input.trim() && !selectedImage) || !isAuthReady || firestoreError;
-            });
-
-            chatInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!isAIGenerating && (input.trim() || selectedImage)) {
-                        handleSendMessage(input);
-                    }
-                }
-            });
-
-            imageUploadBtn.addEventListener('click', () => imageFileInput.click());
-            imageFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        selectedImage = reader.result;
-                        sendMessageBtn.disabled = isAIGenerating || (!input.trim() && !selectedImage) || !isAuthReady || firestoreError;
-                        renderChatInput();
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-
-            sendMessageBtn.addEventListener('click', () => {
-                if (!isAIGenerating && (input.trim() || selectedImage)) {
-                    handleSendMessage(input);
-                }
-            });
-        };
-
-        const renderCanvas = () => {
-            contentContainer.innerHTML = '';
-            const immersiveMatch = rawCanvasContent.match(/<immersive\s+id="([^"]+)"\s+type="([^"]+)"\s+title="([^"]+)">\s*([\s\S]*?)<\/immersive>/);
-            const canvasId = immersiveMatch ? immersiveMatch[1] : 'error-id';
-            const canvasTitle = immersiveMatch ? immersiveMatch[3] : 'Error';
-            const canvasContent = immersiveMatch ? immersiveMatch[4].trim() : rawCanvasContent;
-            
-            const canvasHtml = `
-                <div class="flex flex-col h-full bg-gray-800 rounded-lg shadow-xl overflow-hidden">
-                    <div class="flex-shrink-0 p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
-                        <h2 class="text-xl font-semibold text-white">${canvasTitle}</h2>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-gray-400 text-sm italic">ID: ${canvasId}</span>
-                            <button id="switch-to-chat-btn" class="p-2 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                                    <line x1="13" x2="13" y1="12" y2="12" />
-                                    <line x1="9" x2="9" y1="12" y2="12" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
-                        <div class="prose-sm prose-invert" id="canvas-content"></div>
-                    </div>
-                </div>
-            `;
-            contentContainer.innerHTML = canvasHtml;
-            document.getElementById('canvas-content').innerHTML = getParsedMarkdown(canvasContent);
-            document.getElementById('switch-to-chat-btn').addEventListener('click', () => {
-                mode = 'chat';
-                renderUI();
-            });
-        };
-
-        const renderControls = () => {
-            controlsContainer.innerHTML = '';
-            const controlsHtml = `
-                <button id="switch-to-chat-mode" class="p-3 rounded-full transition-colors ${mode === 'chat' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}" title="Switch to Chat" ${isAIGenerating ? 'disabled' : ''}>
+            </div>
+        </div>
+        
+        <!-- Canvas container for documents -->
+        <div id="canvas-container" class="w-full max-w-4xl h-full flex flex-col bg-gray-800 rounded-lg shadow-xl overflow-hidden">
+            <div class="flex-shrink-0 p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
+                <h2 id="canvas-title" class="text-xl font-semibold text-white"></h2>
+                <button id="close-canvas-btn" class="p-2 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        <line x1="13" x2="13" y1="12" y2="12" />
-                        <line x1="9" x2="9" y1="12" y2="12" />
+                        <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
                     </svg>
                 </button>
-                <div class="flex items-center space-x-2">
-                    <button id="generate-writing-btn" class="p-3 rounded-full transition-colors ${mode === 'writing' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}" title="Generate Document" ${isAIGenerating || !input.trim() || !isAuthReady || firestoreError ? 'disabled' : ''}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect width="18" height="18" x="3" y="3" rx="2" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h10" />
-                        </svg>
-                    </button>
-                    <button id="generate-code-btn" class="p-3 rounded-full transition-colors ${mode === 'code' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}" title="Generate Code" ${isAIGenerating || !input.trim() || !isAuthReady || firestoreError ? 'disabled' : ''}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" />
-                        </svg>
-                    </button>
-                </div>
-                <div class="text-gray-500 text-sm italic">
-                    ${userId ? `User ID: ${userId}` : ''}
-                </div>
-            `;
-            controlsContainer.innerHTML = controlsHtml;
+            </div>
+            <div id="canvas-content" class="flex-1 p-6 overflow-y-auto custom-scrollbar prose-sm prose-invert">
+                <!-- Content will be injected here -->
+            </div>
+        </div>
 
-            document.getElementById('switch-to-chat-mode').addEventListener('click', () => {
-                mode = 'chat';
-                renderUI();
-            });
-            document.getElementById('generate-writing-btn').addEventListener('click', () => {
-                mode = 'canvas';
-                handleGenerateCanvas(input, 'writing');
-            });
-            document.getElementById('generate-code-btn').addEventListener('click', () => {
-                mode = 'canvas';
-                handleGenerateCanvas(input, 'code');
-            });
-        };
+        <!-- Mode switcher for chat/canvas -->
+        <div class="flex-shrink-0 mt-4 p-4 bg-gray-900 rounded-lg shadow-xl flex items-center justify-between space-x-4">
+            <button id="chat-mode-btn" class="p-3 bg-blue-600 text-white rounded-full transition-colors" title="Switch to Chat">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
+                </svg>
+            </button>
+            <div class="flex items-center space-x-2">
+                <button id="writing-mode-btn" class="p-3 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors" title="Generate Document">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" /><path d="M7 8h10" /><path d="M7 12h10" /><path d="M7 16h10" />
+                    </svg>
+                </button>
+                <button id="code-mode-btn" class="p-3 bg-gray-700 text-gray-300 rounded-full hover:bg-gray-600 transition-colors" title="Generate Code">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" />
+                    </svg>
+                </button>
+            </div>
+            <div id="user-id-display" class="text-gray-500 text-sm italic"></div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables for Firebase services
+        let app;
+        let db;
+        let auth;
+        let userId;
+
+        // Configuration variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const chatMessagesDiv = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const uploadImageBtn = document.getElementById('upload-image-btn');
+        const imageFileInput = document.getElementById('image-file-input');
+        const imagePreviewDiv = document.getElementById('image-preview');
+        const previewImage = document.getElementById('preview-image');
+        const removeImageBtn = document.getElementById('remove-image-btn');
+
+        const chatContainer = document.getElementById('chat-container');
+        const canvasContainer = document.getElementById('canvas-container');
+        const chatModeBtn = document.getElementById('chat-mode-btn');
+        const closeCanvasBtn = document.getElementById('close-canvas-btn');
+        const writingModeBtn = document.getElementById('writing-mode-btn');
+        const codeModeBtn = document.getElementById('code-mode-btn');
+        const canvasTitle = document.getElementById('canvas-title');
+        const canvasContent = document.getElementById('canvas-content');
         
-        const renderUI = () => {
-            if (mode === 'chat') {
-                renderChat();
-            } else {
-                renderCanvas();
-            }
-            renderControls();
-        };
+        let selectedImageData = null;
+        let isAIGenerating = false;
 
-        // API Call Helper with exponential backoff
+        // Helper for exponential backoff in API calls
         const fetchWithRetry = async (url, options, retries = 5) => {
             for (let i = 0; i < retries; i++) {
                 try {
@@ -539,99 +265,7 @@
             throw new Error("Failed to fetch after multiple retries.");
         };
 
-        // Handle sending a message
-        const handleSendMessage = async (prompt) => {
-            if (!prompt.trim() && !selectedImage) return;
-            isAIGenerating = true;
-            renderUI();
-
-            const newUserMessage = {
-                role: 'user',
-                content: prompt,
-                timestamp: new Date(),
-                image: selectedImage,
-            };
-            messages.push(newUserMessage);
-            input = '';
-            selectedImage = null;
-            renderUI();
-
-            if (db) {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), { ...newUserMessage, timestamp: serverTimestamp() });
-            }
-
-            let aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
-            const chatHistoryForAPI = messages.map(msg => ({ role: msg.role === 'ai' ? 'model' : 'user', parts: [{ text: msg.content }] }));
-            chatHistoryForAPI.push({ role: 'user', parts: [{ text: prompt }] });
-
-            const payload = {
-                contents: chatHistoryForAPI,
-            };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TEXT_MODEL}:generateContent?key=${window.API_KEY}`;
-            
-            try {
-                const response = await fetchWithRetry(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-                aiText = (result.candidates && result.candidates[0] && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts[0] && result.candidates[0].content.parts[0].text) || aiText;
-            } catch (error) {
-                console.error("Error with text generation API:", error);
-                aiText = `Error generating text: ${error.message}`;
-            }
-
-            const newAIMessage = {
-                role: 'ai',
-                content: aiText,
-                timestamp: new Date(),
-            };
-            messages.push(newAIMessage);
-            isAIGenerating = false;
-            renderUI();
-            if (db) {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), { ...newAIMessage, timestamp: serverTimestamp() });
-            }
-        };
-
-        // Handle generating a canvas
-        const handleGenerateCanvas = async (prompt, type) => {
-            isAIGenerating = true;
-            rawCanvasContent = '';
-            renderUI();
-
-            const payload = {
-                contents: [{ parts: [{ text: `Generate content for a canvas. The user request is: "${prompt}". The content type is ${type}. Respond with the full content of the canvas document, including the title and id. The content should be a complete, self-contained block of Markdown or code. Do not include any conversational text outside the canvas. The format should be a single <immersive> tag with the content inside.` }] }],
-            };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TEXT_MODEL}:generateContent?key=${window.API_KEY}`;
-            
-            try {
-                const response = await fetchWithRetry(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-                const content = (result.candidates && result.candidates[0] && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts[0] && result.candidates[0].content.parts[0].text) || "Error generating content.";
-                rawCanvasContent = content;
-                mode = 'canvas';
-            } catch (error) {
-                console.error("Error generating canvas content:", error);
-                rawCanvasContent = `Error generating canvas content: ${error.message}`;
-            } finally {
-                isAIGenerating = false;
-                renderUI();
-            }
-        };
-        
-        // Handle image removal
-        window.handleRemoveImage = () => {
-            selectedImage = null;
-            renderChatInput();
-        };
-
-        // TTS functions
+        // Helper for TTS audio conversion
         const base64ToArrayBuffer = (base64) => {
             const binaryString = window.atob(base64);
             const len = binaryString.length;
@@ -641,13 +275,12 @@
             }
             return bytes.buffer;
         };
-        
+
         const pcmToWav = (pcm, sampleRate) => {
             const pcmData = new Int16Array(pcm);
             const buffer = new ArrayBuffer(44 + pcmData.length * 2);
             const view = new DataView(buffer);
 
-            // WAV header
             let offset = 0;
             const writeString = (str) => {
                 for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
@@ -670,17 +303,202 @@
             writeString('data');
             writeUint32(pcmData.length * 2);
 
-            // Write PCM data
             for (let i = 0; i < pcmData.length; i++) {
                 view.setInt16(offset, pcmData[i], true);
                 offset += 2;
             }
             return new Blob([view], { type: 'audio/wav' });
         };
-        window.base64ToArrayBuffer = base64ToArrayBuffer;
-        window.pcmToWav = pcmToWav;
 
-        window.handleSpeak = async (text) => {
+        // UI rendering functions
+        function createMessageElement(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex items-start space-x-2 p-4 rounded-xl shadow-lg my-2 max-w-3xl ${message.role === 'user' ? 'bg-blue-600 text-white self-end ml-auto' : 'bg-gray-700 text-gray-100 self-start mr-auto'}`;
+
+            const iconSvg = message.role === 'user' ? 
+                `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>` :
+                `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" /></svg>`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = "flex-grow";
+
+            const parsedMarkdown = marked.parse(message.content);
+            const immersiveRegex = /<immersive[^>]*>([\s\S]*?)<\/immersive>/g;
+            contentDiv.innerHTML = parsedMarkdown.replace(immersiveRegex, '$1');
+
+            messageDiv.innerHTML = `<div class="flex-shrink-0 mt-1">${iconSvg}</div>`;
+            messageDiv.appendChild(contentDiv);
+
+            if (message.image) {
+                const img = document.createElement('img');
+                img.src = message.image;
+                img.alt = "User upload";
+                img.className = "mt-2 rounded-lg shadow-md max-w-full h-auto";
+                contentDiv.appendChild(img);
+            }
+
+            if (message.role === 'ai') {
+                const speakerButton = document.createElement('button');
+                speakerButton.className = "flex-shrink-0 text-gray-400 hover:text-white ml-2";
+                speakerButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>`;
+                speakerButton.title = "Speak";
+                speakerButton.onclick = () => handleSpeak(message.content);
+                messageDiv.appendChild(speakerButton);
+            }
+
+            return messageDiv;
+        }
+
+        function scrollToBottom() {
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        }
+        
+        function showLoadingIndicator(show) {
+            loadingIndicator.style.display = show ? 'flex' : 'none';
+        }
+
+        function showCanvas(content, title) {
+            chatContainer.style.display = 'none';
+            canvasContainer.style.display = 'flex';
+            canvasTitle.textContent = title;
+            canvasContent.innerHTML = marked.parse(content);
+            chatModeBtn.classList.remove('bg-blue-600', 'text-white');
+            chatModeBtn.classList.add('bg-gray-700', 'text-gray-300', 'hover:bg-gray-600');
+        }
+        
+        function showChat() {
+            chatContainer.style.display = 'flex';
+            canvasContainer.style.display = 'none';
+            chatModeBtn.classList.add('bg-blue-600', 'text-white');
+            chatModeBtn.classList.remove('bg-gray-700', 'text-gray-300', 'hover:bg-gray-600');
+        }
+
+        // API interaction functions
+        async function handleSendMessage(prompt) {
+            if (!prompt.trim() && !selectedImageData) return;
+
+            isAIGenerating = true;
+            showLoadingIndicator(true);
+            
+            const newUserMessage = {
+                role: 'user',
+                content: prompt,
+                timestamp: Date.now(),
+                image: selectedImageData,
+            };
+
+            // Add user message to UI
+            chatMessagesDiv.appendChild(createMessageElement(newUserMessage));
+            scrollToBottom();
+
+            // Clear input and image
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            selectedImageData = null;
+            imagePreviewDiv.style.display = 'none';
+            previewImage.src = '';
+            
+            // Add user message to Firestore
+            if (db && userId) {
+                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
+                    ...newUserMessage,
+                    timestamp: serverTimestamp()
+                });
+            }
+
+            let aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
+            
+            const chatHistoryForAPI = Array.from(chatMessagesDiv.children).map(child => {
+                // This is a simplified chat history retrieval; a more robust solution would be needed for a real app
+                const content = child.querySelector('.flex-grow').textContent.trim();
+                const role = child.querySelector('svg:first-child path:first-child').getAttribute('d') === 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2' ? 'user' : 'model';
+                return { role: role === 'ai' ? 'model' : 'user', parts: [{ text: content }] };
+            });
+
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: prompt },
+                            ...(selectedImageData ? [{ inlineData: { mimeType: "image/png", data: selectedImageData.split(',')[1] } }] : [])
+                        ]
+                    }
+                ]
+            };
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
+            
+            try {
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                aiText = (result.candidates && result.candidates[0]?.content?.parts?.[0]?.text) || aiText;
+            } catch (error) {
+                console.error("Error with text generation API:", error);
+                aiText = `Error generating text: ${error.message}`;
+            }
+
+            const newAIMessage = {
+                role: 'ai',
+                content: aiText,
+                timestamp: Date.now(),
+            };
+
+            // Add AI message to UI
+            chatMessagesDiv.appendChild(createMessageElement(newAIMessage));
+            scrollToBottom();
+            showLoadingIndicator(false);
+            isAIGenerating = false;
+
+            // Add AI message to Firestore
+            if (db && userId) {
+                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
+                    ...newAIMessage,
+                    timestamp: serverTimestamp()
+                });
+            }
+        }
+        
+        async function handleGenerateCanvas(prompt, type) {
+            if (!prompt.trim()) return;
+
+            isAIGenerating = true;
+            showLoadingIndicator(true);
+
+            let canvasContentText = "Error generating document.";
+
+            const payload = {
+                contents: [{ parts: [{ text: `Generate content for a canvas. The user request is: "${prompt}". The content type is ${type}. Respond with the full content of the canvas document, including the title and id. The content should be a complete, self-contained block of Markdown or code. Do not include any conversational text outside the canvas. The format should be a single <immersive> tag with the content inside.` }] }],
+            };
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
+
+            try {
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                canvasContentText = (result.candidates && result.candidates[0]?.content?.parts?.[0]?.text) || canvasContentText;
+            } catch (error) {
+                console.error("Error generating canvas content:", error);
+                canvasContentText = `Error generating canvas content: ${error.message}`;
+            }
+
+            const immersiveMatch = canvasContentText.match(/<immersive\s+id="([^"]+)"\s+type="([^"]+)"\s+title="([^"]+)">\s*([\s\S]*?)<\/immersive>/);
+            const content = immersiveMatch ? immersiveMatch[4].trim() : canvasContentText;
+            const title = immersiveMatch ? immersiveMatch[3] : "Generated Document";
+
+            showCanvas(content, title);
+            showLoadingIndicator(false);
+            isAIGenerating = false;
+        }
+        
+        async function handleSpeak(text) {
             if (!text) return;
             const payload = {
                 contents: [{ parts: [{ text: `Say in a natural tone: ${text}` }] }],
@@ -692,9 +510,9 @@
                         }
                     }
                 },
-                model: window.TTS_MODEL,
+                model: "gemini-2.5-flash-preview-tts",
             };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.TTS_MODEL}:generateContent?key=${window.API_KEY}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=`;
 
             try {
                 const response = await fetchWithRetry(apiUrl, {
@@ -722,42 +540,114 @@
             } catch (error) {
                 console.error("Error with TTS API:", error);
             }
-        };
+        }
 
-        // Initial setup function
-        const setupApp = () => {
-            if (db && userId) {
-                const collectionPath = `/artifacts/${appId}/users/${userId}/messages`;
-                const q = query(collection(db, collectionPath));
-                unsubscribeFirestore = onSnapshot(q, (querySnapshot) => {
-                    const newMessages = [];
-                    querySnapshot.forEach((doc) => {
-                        newMessages.push({ ...doc.data(), id: doc.id });
+
+        // Event listeners and initialization
+        window.onload = function() {
+            if (firebaseConfig) {
+                try {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                    
+                    onAuthStateChanged(auth, async (user) => {
+                        if (!user) {
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(auth, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                                user = auth.currentUser;
+                            } catch (error) {
+                                console.error("Firebase Auth Error:", error);
+                            }
+                        }
+                        if (user) {
+                            userId = user.uid;
+                            userIdDisplay.textContent = `User ID: ${userId.substring(0, 8)}...`;
+                            const q = query(collection(db, `/artifacts/${appId}/users/${userId}/messages`), orderBy('timestamp', 'asc'));
+                            onSnapshot(q, (querySnapshot) => {
+                                let messages = [];
+                                querySnapshot.forEach((doc) => {
+                                    messages.push(doc.data());
+                                });
+                                // Clear current messages and re-render
+                                chatMessagesDiv.innerHTML = '';
+                                if (messages.length === 0) {
+                                    // Re-add welcome message if no messages
+                                    const welcomeMessage = document.querySelector('#chat-messages > div:first-child');
+                                    if (welcomeMessage) {
+                                        chatMessagesDiv.appendChild(welcomeMessage);
+                                    }
+                                } else {
+                                    messages.forEach(msg => chatMessagesDiv.appendChild(createMessageElement(msg)));
+                                }
+                                scrollToBottom();
+                            });
+                        } else {
+                            console.error("User not authenticated.");
+                        }
                     });
-                    newMessages.sort((a, b) => {
-                        const aMillis = a.timestamp && a.timestamp.toMillis ? a.timestamp.toMillis() : 0;
-                        const bMillis = b.timestamp && b.timestamp.toMillis ? b.timestamp.toMillis() : 0;
-                        return aMillis - bMillis;
-                    });
-                    messages = newMessages;
-                    renderUI();
-                }, (error) => {
-                    console.error("Error with Firestore onSnapshot:", error);
-                    firestoreError = error.message;
-                    renderUI();
-                });
+                } catch (error) {
+                    console.error("Firebase Initialization Error:", error);
+                }
             } else {
-                renderUI();
+                console.warn("Firebase config not found. Running in offline mode.");
             }
-        };
 
-        // Window onload event to start the app
-        document.addEventListener('DOMContentLoaded', () => {
-            // Check if Firebase auth is already ready, if not, it will be handled by the onAuthStateChanged listener
-            if (isAuthReady) {
-                setupApp();
-            }
-        });
+            sendBtn.addEventListener('click', () => {
+                if (!isAIGenerating) {
+                    handleSendMessage(chatInput.value);
+                }
+            });
+
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !isAIGenerating) {
+                    e.preventDefault();
+                    handleSendMessage(chatInput.value);
+                }
+            });
+
+            chatInput.addEventListener('input', () => {
+                chatInput.style.height = 'auto';
+                chatInput.style.height = `${chatInput.scrollHeight}px`;
+            });
+
+            uploadImageBtn.addEventListener('click', () => {
+                imageFileInput.click();
+            });
+
+            imageFileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        selectedImageData = reader.result;
+                        previewImage.src = selectedImageData;
+                        imagePreviewDiv.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            removeImageBtn.addEventListener('click', () => {
+                selectedImageData = null;
+                previewImage.src = '';
+                imagePreviewDiv.style.display = 'none';
+                imageFileInput.value = '';
+            });
+
+            chatModeBtn.addEventListener('click', showChat);
+            closeCanvasBtn.addEventListener('click', showChat);
+            writingModeBtn.addEventListener('click', () => {
+                handleGenerateCanvas(chatInput.value, 'writing');
+            });
+            codeModeBtn.addEventListener('click', () => {
+                handleGenerateCanvas(chatInput.value, 'code');
+            });
+        };
     </script>
 </body>
 </html>
