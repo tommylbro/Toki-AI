@@ -431,6 +431,15 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
+                
+                // Check for a successful response status
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("Image generation API error:", errorData);
+                    aiText = `Error generating image: ${errorData.error.message || 'An unknown error occurred.'}`;
+                    return { text: aiText, image: aiImage };
+                }
+
                 const result = await response.json();
                 const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
                 if (base64Data) {
@@ -438,7 +447,7 @@
                     aiText = `Here is the image you requested.`;
                 } else {
                     console.error("Invalid image generation response:", result);
-                    aiText = `Error generating image: Invalid response format.`;
+                    aiText = `Error generating image: Invalid response format. This may be due to content policy violations or an overly complex prompt. Please try a simpler prompt.`;
                 }
             } catch (error) {
                 console.error("Error with image generation API:", error);
@@ -456,11 +465,12 @@
             isAIGenerating = true;
             showLoadingIndicator(true, 'AI is thinking...');
             
+            // Create the message object to be displayed in the chat
             const newUserMessage = {
                 role: 'user',
                 content: prompt,
-                timestamp: Date.now(),
                 image: selectedImageData,
+                timestamp: Date.now(),
             };
 
             chatMessagesDiv.appendChild(createMessageElement(newUserMessage));
@@ -472,11 +482,11 @@
             imagePreviewDiv.style.display = 'none';
             previewImage.src = '';
 
+            // Save a copy of the user message to Firestore without the image data
             if (db && userId) {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
-                    ...newUserMessage,
-                    timestamp: serverTimestamp()
-                });
+                const firestoreUserMessage = { ...newUserMessage, timestamp: serverTimestamp() };
+                delete firestoreUserMessage.image; // Do not save large image data
+                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), firestoreUserMessage);
             }
 
             let newAIMessage = { role: 'ai', content: '', timestamp: Date.now(), image: null };
@@ -497,11 +507,11 @@
             showLoadingIndicator(false);
             isAIGenerating = false;
 
+            // Save a copy of the AI message to Firestore without the image data
             if (db && userId) {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
-                    ...newAIMessage,
-                    timestamp: serverTimestamp()
-                });
+                const firestoreAIMessage = { ...newAIMessage, timestamp: serverTimestamp() };
+                delete firestoreAIMessage.image; // Do not save large image data
+                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), firestoreAIMessage);
             }
         }
         
