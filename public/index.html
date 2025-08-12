@@ -388,14 +388,14 @@
             chatModeBtn.classList.remove('bg-gray-700', 'text-gray-300', 'hover:bg-gray-600');
         }
         
-        async function generateText(prompt) {
+        async function generateText(prompt, image) {
             let aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
             const payload = {
                 contents: [{
                     role: "user",
                     parts: [
                         { text: prompt },
-                        ...(selectedImageData ? [{ inlineData: { mimeType: "image/png", data: selectedImageData.split(',')[1] } }] : [])
+                        ...(image ? [{ inlineData: { mimeType: "image/png", data: image.split(',')[1] } }] : [])
                     ]
                 }]
             };
@@ -423,7 +423,8 @@
                 instances: { prompt: prompt },
                 parameters: { "sampleCount": 1}
             };
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=`;
+            const apiKey = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
 
             try {
                 const response = await fetchWithRetry(apiUrl, {
@@ -478,6 +479,7 @@
 
             chatInput.value = '';
             chatInput.style.height = 'auto';
+            const tempSelectedImageData = selectedImageData;
             selectedImageData = null;
             imagePreviewDiv.style.display = 'none';
             previewImage.src = '';
@@ -499,7 +501,7 @@
                 newAIMessage.content = result.text;
                 newAIMessage.image = result.image;
             } else {
-                newAIMessage.content = await generateText(prompt);
+                newAIMessage.content = await generateText(prompt, tempSelectedImageData);
             }
 
             chatMessagesDiv.appendChild(createMessageElement(newAIMessage));
