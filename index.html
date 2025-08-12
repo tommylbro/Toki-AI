@@ -415,6 +415,387 @@
                     const audioData = audioPart.inlineData.data;
                     const mimeType = audioPart.inlineData.mimeType;
 
+                    const sampleRateMatc            collection,
+            doc,
+            addDoc,
+            getDoc,
+            setDoc,
+            onSnapshot,
+            query,
+            serverTimestamp
+        };
+        window.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        window.initialAuthToken = initialAuthToken;
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        .prose-sm {
+            font-size: 0.875rem; /* 14px */
+            line-height: 1.5;
+        }
+        /* Custom scrollbar for chat */
+        .chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .chat-container::-webkit-scrollbar-track {
+            background: #2d3748;
+            border-radius: 10px;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background-color: #4a5568;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 antialiased h-screen flex flex-col">
+    <div id="root" class="flex-grow flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Custom icon components
+        const SendIcon = ({ size = 24, className = 'text-white' }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        );
+
+        const CodeIcon = ({ size = 24, className = 'text-white' }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+        );
+
+        const PenToolIcon = ({ size = 24, className = 'text-white' }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+                <path d="M18 13l-1.5-7.5L2 2l7.5 1.5L18 13z"></path>
+                <path d="M2 2l7.5 7.5"></path>
+            </svg>
+        );
+        
+        const MessageSquareIcon = ({ size = 24, className = 'text-white' }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+        );
+
+        const Volume2Icon = ({ size = 24, className = 'text-white' }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+        );
+        
+        // Modal component for alerts
+        const Modal = ({ show, title, message, onClose }) => {
+            if (!show) return null;
+            return (
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
+                    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-700">
+                        <h3 className="text-xl font-bold mb-2 text-indigo-400">{title}</h3>
+                        <p className="text-gray-300 mb-4">{message}</p>
+                        <button
+                            onClick={onClose}
+                            className="w-full p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [input, setInput] = useState('');
+            const [isWritingMode, setIsWritingMode] = useState(true);
+            const [isChatMode, setIsChatMode] = useState(false);
+            const [isAIGenerating, setIsAIGenerating] = useState(false);
+            const [isLoadingTTS, setIsLoadingTTS] = useState(false);
+            const [canvasArtifacts, setCanvasArtifacts] = useState([]);
+            const [chatHistory, setChatHistory] = useState([]);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [userId, setUserId] = useState(null);
+            const [firestoreError, setFirestoreError] = useState(null);
+            const [showErrorModal, setShowErrorModal] = useState(false);
+            const [modalMessage, setModalMessage] = useState('');
+            const [markedLoaded, setMarkedLoaded] = useState(false);
+            const chatContainerRef = useRef(null);
+            const canvasContainerRef = useRef(null);
+
+            // --- Helper Functions for TTS ---
+            const base64ToArrayBuffer = (base64) => {
+                const binaryString = atob(base64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            };
+
+            const pcmToWav = (pcmData, sampleRate) => {
+                const pcm16 = new Int16Array(pcmData);
+                const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+                const view = new DataView(buffer);
+                const writeString = (view, offset, string) => {
+                    for (let i = 0; i < string.length; i++) {
+                        view.setUint8(offset + i, string.charCodeAt(i));
+                    }
+                };
+                let offset = 0;
+                writeString(view, offset, 'RIFF'); offset += 4;
+                view.setUint32(offset, 36 + pcm16.length * 2, true); offset += 4;
+                writeString(view, offset, 'WAVE'); offset += 4;
+                writeString(view, offset, 'fmt '); offset += 4;
+                view.setUint32(offset, 16, true); offset += 4;
+                view.setUint16(offset, 1, true); offset += 2;
+                view.setUint16(offset, 1, true); offset += 2; // Mono
+                view.setUint32(offset, sampleRate, true); offset += 4;
+                view.setUint32(offset, sampleRate * 2, true); offset += 4;
+                view.setUint16(offset, 2, true); offset += 2;
+                view.setUint16(offset, 16, true); offset += 2;
+                writeString(view, offset, 'data'); offset += 4;
+                view.setUint32(offset, pcm16.length * 2, true); offset += 4;
+                for (let i = 0; i < pcm16.length; i++) {
+                    view.setInt16(offset + i * 2, pcm16[i], true);
+                }
+                return new Blob([view], { type: 'audio/wav' });
+            };
+
+
+            // --- Firebase Initialization and Auth ---
+            useEffect(() => {
+                const initFirebase = async () => {
+                    const { auth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.firebase;
+                    const initialAuthToken = window.initialAuthToken;
+
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        console.log("Firebase Auth successful");
+
+                        const unsubscribe = onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                                console.log("User UID:", user.uid);
+                            } else {
+                                console.log("User signed out or not authenticated.");
+                                setUserId(null);
+                            }
+                            setIsAuthReady(true);
+                        });
+                        return () => unsubscribe();
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                        setFirestoreError(error.message);
+                        setModalMessage(`Firebase Auth Error: ${error.message}. Please check your connection.`);
+                        setShowErrorModal(true);
+                    }
+                };
+                initFirebase();
+            }, []);
+
+            // --- Check for Marked.js Library ---
+            useEffect(() => {
+                const checkMarked = () => {
+                    if (window.marked) {
+                        setMarkedLoaded(true);
+                    } else {
+                        setTimeout(checkMarked, 100); // Polling for the library to be loaded
+                    }
+                };
+                checkMarked();
+            }, []);
+            
+            // --- Auto-scroll chat and canvas containers ---
+            useEffect(() => {
+                if (chatContainerRef.current) {
+                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                }
+            }, [chatHistory]);
+
+            useEffect(() => {
+                if (canvasContainerRef.current) {
+                    canvasContainerRef.current.scrollTop = canvasContainerRef.current.scrollHeight;
+                }
+            }, [canvasArtifacts]);
+
+
+            // --- Firestore Listener for Canvas Artifacts ---
+            useEffect(() => {
+                if (!isAuthReady || !userId) return;
+                const { collection, onSnapshot, query } = window.firebase;
+                const db = window.firebase.db;
+                
+                if (!db) {
+                    console.error("Firestore DB not available.");
+                    return;
+                }
+
+                const canvasPath = `artifacts/${window.appId}/users/${userId}/canvas`;
+                const q = query(collection(db, canvasPath));
+
+                console.log("Setting up Firestore listener on path:", canvasPath);
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const docs = [];
+                    snapshot.forEach(doc => {
+                        docs.push({ id: doc.id, ...doc.data() });
+                    });
+                    setCanvasArtifacts(docs.sort((a, b) => {
+                        const timeA = a.timestamp ? a.timestamp.toDate() : new Date(0);
+                        const timeB = b.timestamp ? b.timestamp.toDate() : new Date(0);
+                        return timeA - timeB;
+                    }));
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    setFirestoreError(error.message);
+                    setModalMessage(`Firestore Error: ${error.message}. Please check your security rules.`);
+                    setShowErrorModal(true);
+                });
+
+                return () => unsubscribe();
+            }, [isAuthReady, userId]);
+
+            // --- Firestore Listener for Chat History ---
+            useEffect(() => {
+                if (!isAuthReady || !userId) return;
+                const { collection, onSnapshot, query } = window.firebase;
+                const db = window.firebase.db;
+
+                if (!db) {
+                    console.error("Firestore DB not available.");
+                    return;
+                }
+                
+                const conversationPath = `artifacts/${window.appId}/users/${userId}/conversations`;
+                const q = query(collection(db, conversationPath));
+
+                console.log("Setting up Firestore listener on path:", conversationPath);
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const docs = [];
+                    snapshot.forEach(doc => {
+                        docs.push({ id: doc.id, ...doc.data() });
+                    });
+                    setChatHistory(docs.sort((a, b) => {
+                        const timeA = a.timestamp ? a.timestamp.toDate() : new Date(0);
+                        const timeB = b.timestamp ? b.timestamp.toDate() : new Date(0);
+                        return timeA - timeB;
+                    }));
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    setFirestoreError(error.message);
+                    setModalMessage(`Firestore Error: ${error.message}. Please check your security rules.`);
+                    setShowErrorModal(true);
+                });
+
+                return () => unsubscribe();
+            }, [isAuthReady, userId]);
+
+
+            // --- Gemini LLM API Call Function ---
+            const generateContent = async (prompt, history = []) => {
+                setIsAIGenerating(true);
+                const chatHistoryPayload = history.map(item => ({ role: item.role, parts: [{ text: item.text }] }));
+                chatHistoryPayload.push({ role: "user", parts: [{ text: prompt }] });
+                
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                let attempt = 0;
+                const maxAttempts = 5;
+                const baseDelay = 1000;
+                
+                while (attempt < maxAttempts) {
+                    try {
+                        const payload = { contents: chatHistoryPayload };
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            if (response.status === 429) {
+                                throw new Error('Too Many Requests');
+                            }
+                            throw new Error(`API error: ${response.statusText}`);
+                        }
+
+                        const result = await response.json();
+                        if (result.candidates && result.candidates.length > 0 &&
+                            result.candidates[0].content && result.candidates[0].content.parts &&
+                            result.candidates[0].content.parts.length > 0) {
+                            const text = result.candidates[0].content.parts[0].text;
+                            return text;
+                        } else {
+                            throw new Error("Invalid response from API");
+                        }
+                    } catch (error) {
+                        console.error(`Attempt ${attempt + 1} failed:`, error);
+                        attempt++;
+                        if (attempt < maxAttempts) {
+                            const delay = baseDelay * Math.pow(2, attempt);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            // --- Gemini TTS API Call Function ---
+            const handleTextToSpeech = async (text) => {
+                setIsLoadingTTS(true);
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                
+                try {
+                    const payload = {
+                        contents: [{
+                            parts: [{ text: `Say in a clear voice: ${text}` }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Kore" }
+                                }
+                            }
+                        },
+                        model: "gemini-2.5-flash-preview-tts"
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    const candidates = result.candidates;
+                    const audioPart = candidates && candidates[0] && candidates[0].content && candidates[0].content.parts && candidates[0].content.parts[0];
+                    
+                    if (!audioPart || !audioPart.inlineData) {
+                        throw new Error("Invalid TTS response from API");
+                    }
+                    
+                    const audioData = audioPart.inlineData.data;
+                    const mimeType = audioPart.inlineData.mimeType;
+
                     const sampleRateMatc            scrollbar-width: thin;
             scrollbar-color: #4a5568 #1a202c;
         }
