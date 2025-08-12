@@ -6,6 +6,7 @@
     <title>Toki AI</title>
     <!-- Tailwind CSS CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- Third-party library for markdown rendering -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
 
@@ -322,9 +323,14 @@
             const contentDiv = document.createElement('div');
             contentDiv.className = "flex-grow";
 
-            const parsedMarkdown = marked.parse(message.content);
-            const immersiveRegex = /<immersive[^>]*>([\s\S]*?)<\/immersive>/g;
-            contentDiv.innerHTML = parsedMarkdown.replace(immersiveRegex, '$1');
+            // Use marked.parse to convert markdown to HTML
+            if (window.marked) {
+                const parsedMarkdown = window.marked.parse(message.content);
+                const immersiveRegex = /<immersive[^>]*>([\s\S]*?)<\/immersive>/g;
+                contentDiv.innerHTML = parsedMarkdown.replace(immersiveRegex, '$1');
+            } else {
+                contentDiv.textContent = message.content;
+            }
 
             messageDiv.innerHTML = `<div class="flex-shrink-0 mt-1">${iconSvg}</div>`;
             messageDiv.appendChild(contentDiv);
@@ -361,7 +367,11 @@
             chatContainer.style.display = 'none';
             canvasContainer.style.display = 'flex';
             canvasTitle.textContent = title;
-            canvasContent.innerHTML = marked.parse(content);
+            if (window.marked) {
+                canvasContent.innerHTML = window.marked.parse(content);
+            } else {
+                canvasContent.textContent = content;
+            }
             chatModeBtn.classList.remove('bg-blue-600', 'text-white');
             chatModeBtn.classList.add('bg-gray-700', 'text-gray-300', 'hover:bg-gray-600');
         }
