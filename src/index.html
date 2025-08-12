@@ -112,10 +112,11 @@
         
         // --- API Keys and Models ---
         // Use the API key from the environment
-        window.API_KEY = typeof __api_key !== 'undefined' ? __api_key : "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
+        window.API_KEY = typeof __api_key !== 'undefined' ? __api_key : "";
         window.TEXT_MODEL = "gemini-2.5-flash-preview-05-20";
         window.IMAGE_ANALYSIS_MODEL = "gemini-2.5-flash-preview-05-20";
-        window.IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002";
+        // CORRECTED: Use a dedicated image generation model and endpoint
+        window.IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002"; 
         window.TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
         // Helper functions
@@ -139,12 +140,12 @@
             const view = new DataView(buffer);
 
             // RIFF chunk descriptor
-            writeString(view, 0, 'RIFF');
+            window.writeString(view, 0, 'RIFF');
             view.setUint32(4, 36 + dataSize, true);
-            writeString(view, 8, 'WAVE');
+            window.writeString(view, 8, 'WAVE');
 
             // fmt chunk
-            writeString(view, 12, 'fmt ');
+            window.writeString(view, 12, 'fmt ');
             view.setUint32(16, 16, true);
             view.setUint16(20, 1, true); // Audio format (1 = PCM)
             view.setUint16(22, numChannels, true);
@@ -154,7 +155,7 @@
             view.setUint16(34, 16, true); // Bits per sample
 
             // data chunk
-            writeString(view, 36, 'data');
+            window.writeString(view, 36, 'data');
             view.setUint32(40, dataSize, true);
 
             // Write the PCM data
@@ -509,11 +510,15 @@
                         sendAIMessage(aiText);
                     }
                 } else if (prompt.trim().toLowerCase().startsWith("generate image")) {
-                    // Handle image generation request
+                    // CORRECTED: Handle image generation request with correct API payload
                     const imagePrompt = prompt.substring("generate image".length).trim();
                     const payload = {
-                        instances: [{ prompt: imagePrompt }],
-                        parameters: { "sampleCount": 1 }
+                        instances: {
+                            prompt: imagePrompt
+                        },
+                        parameters: {
+                            "sampleCount": 1
+                        }
                     };
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${window.IMAGE_GENERATION_MODEL}:predict?key=${window.API_KEY}`;
                     
@@ -525,7 +530,6 @@
                         });
                         const result = await response.json();
                         
-                        // --- UPDATED ERROR HANDLING LOGIC ---
                         if (result && result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
                             const base64Data = result.predictions[0].bytesBase64Encoded;
                             const imageUrl = `data:image/png;base64,${base64Data}`;
@@ -738,7 +742,7 @@
             };
             
             const handleGenerateImage = () => {
-                const prompt = `generate image of ${input}`;
+                const prompt = input;
                 handleSendMessage(prompt);
             }
 
