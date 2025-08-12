@@ -257,7 +257,7 @@
                 } catch (error) {
                     if (i < retries - 1) {
                         const delay = Math.pow(2, i) * 1000;
-                        await new Promise(resolve => setTimeout(resolve, delay));
+                        await new new Promise(resolve => setTimeout(resolve, delay));
                         continue;
                     }
                     throw error;
@@ -323,8 +323,13 @@
             const contentDiv = document.createElement('div');
             contentDiv.className = "flex-grow";
 
-            // Use marked.parse to convert markdown to HTML
-            if (window.marked) {
+            if (message.image) {
+                const img = document.createElement('img');
+                img.src = message.image;
+                img.alt = message.role === 'user' ? "User upload" : "Generated Image";
+                img.className = "mt-2 rounded-lg shadow-md max-w-full h-auto";
+                contentDiv.appendChild(img);
+            } else if (window.marked) {
                 const parsedMarkdown = window.marked.parse(message.content);
                 const immersiveRegex = /<immersive[^>]*>([\s\S]*?)<\/immersive>/g;
                 contentDiv.innerHTML = parsedMarkdown.replace(immersiveRegex, '$1');
@@ -334,16 +339,8 @@
 
             messageDiv.innerHTML = `<div class="flex-shrink-0 mt-1">${iconSvg}</div>`;
             messageDiv.appendChild(contentDiv);
-
-            if (message.image) {
-                const img = document.createElement('img');
-                img.src = message.image;
-                img.alt = "User upload";
-                img.className = "mt-2 rounded-lg shadow-md max-w-full h-auto";
-                contentDiv.appendChild(img);
-            }
-
-            if (message.role === 'ai') {
+            
+            if (message.role === 'ai' && !message.image) {
                 const speakerButton = document.createElement('button');
                 speakerButton.className = "flex-shrink-0 text-gray-400 hover:text-white ml-2";
                 speakerButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>`;
@@ -351,7 +348,7 @@
                 speakerButton.onclick = () => handleSpeak(message.content);
                 messageDiv.appendChild(speakerButton);
             }
-
+            
             return messageDiv;
         }
 
@@ -359,8 +356,16 @@
             chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
         }
         
-        function showLoadingIndicator(show) {
+        function showLoadingIndicator(show, message = 'AI is thinking...') {
             loadingIndicator.style.display = show ? 'flex' : 'none';
+            const loadingText = loadingIndicator.querySelector('p');
+            if (loadingText) {
+                loadingText.textContent = message;
+            } else {
+                const p = document.createElement('p');
+                p.textContent = message;
+                loadingIndicator.appendChild(p);
+            }
         }
 
         function showCanvas(content, title) {
@@ -382,63 +387,19 @@
             chatModeBtn.classList.add('bg-blue-600', 'text-white');
             chatModeBtn.classList.remove('bg-gray-700', 'text-gray-300', 'hover:bg-gray-600');
         }
-
-        // API interaction functions
-        async function handleSendMessage(prompt) {
-            if (!prompt.trim() && !selectedImageData) return;
-
-            isAIGenerating = true;
-            showLoadingIndicator(true);
-            
-            const newUserMessage = {
-                role: 'user',
-                content: prompt,
-                timestamp: Date.now(),
-                image: selectedImageData,
-            };
-
-            // Add user message to UI
-            chatMessagesDiv.appendChild(createMessageElement(newUserMessage));
-            scrollToBottom();
-
-            // Clear input and image
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-            selectedImageData = null;
-            imagePreviewDiv.style.display = 'none';
-            previewImage.src = '';
-            
-            // Add user message to Firestore
-            if (db && userId) {
-                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
-                    ...newUserMessage,
-                    timestamp: serverTimestamp()
-                });
-            }
-
+        
+        async function generateText(prompt) {
             let aiText = "I'm sorry, I couldn't get a response from the AI at the moment. Please try again later.";
-            
-            const chatHistoryForAPI = Array.from(chatMessagesDiv.children).map(child => {
-                // This is a simplified chat history retrieval; a more robust solution would be needed for a real app
-                const content = child.querySelector('.flex-grow').textContent.trim();
-                const role = child.querySelector('svg:first-child path:first-child').getAttribute('d') === 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2' ? 'user' : 'model';
-                return { role: role === 'ai' ? 'model' : 'user', parts: [{ text: content }] };
-            });
-
             const payload = {
-                contents: [
-                    {
-                        role: "user",
-                        parts: [
-                            { text: prompt },
-                            ...(selectedImageData ? [{ inlineData: { mimeType: "image/png", data: selectedImageData.split(',')[1] } }] : [])
-                        ]
-                    }
-                ]
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: prompt },
+                        ...(selectedImageData ? [{ inlineData: { mimeType: "image/png", data: selectedImageData.split(',')[1] } }] : [])
+                    ]
+                }]
             };
-            
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
-            
             try {
                 const response = await fetchWithRetry(apiUrl, {
                     method: 'POST',
@@ -451,20 +412,91 @@
                 console.error("Error with text generation API:", error);
                 aiText = `Error generating text: ${error.message}`;
             }
+            return aiText;
+        }
 
-            const newAIMessage = {
-                role: 'ai',
-                content: aiText,
+        async function generateImage(prompt) {
+            let aiImage = null;
+            let aiText = `I'm sorry, I couldn't generate an image at the moment. Please try again later.`;
+
+            const payload = {
+                instances: { prompt: prompt },
+                parameters: { "sampleCount": 1}
+            };
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=`;
+
+            try {
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                if (base64Data) {
+                    aiImage = `data:image/png;base64,${base64Data}`;
+                    aiText = `Here is the image you requested.`;
+                } else {
+                    console.error("Invalid image generation response:", result);
+                    aiText = `Error generating image: Invalid response format.`;
+                }
+            } catch (error) {
+                console.error("Error with image generation API:", error);
+                aiText = `Error generating image: ${error.message}`;
+            }
+
+            return { text: aiText, image: aiImage };
+        }
+
+
+        // API interaction functions
+        async function handleSendMessage(prompt) {
+            if (!prompt.trim() && !selectedImageData) return;
+
+            isAIGenerating = true;
+            showLoadingIndicator(true, 'AI is thinking...');
+            
+            const newUserMessage = {
+                role: 'user',
+                content: prompt,
                 timestamp: Date.now(),
+                image: selectedImageData,
             };
 
-            // Add AI message to UI
+            chatMessagesDiv.appendChild(createMessageElement(newUserMessage));
+            scrollToBottom();
+
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            selectedImageData = null;
+            imagePreviewDiv.style.display = 'none';
+            previewImage.src = '';
+
+            if (db && userId) {
+                await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
+                    ...newUserMessage,
+                    timestamp: serverTimestamp()
+                });
+            }
+
+            let newAIMessage = { role: 'ai', content: '', timestamp: Date.now(), image: null };
+            const imageGenRegex = /^(generate|create) an image of/i;
+
+            if (imageGenRegex.test(prompt)) {
+                showLoadingIndicator(true, 'Generating image...');
+                const imagePrompt = prompt.replace(imageGenRegex, '').trim();
+                const result = await generateImage(imagePrompt);
+                newAIMessage.content = result.text;
+                newAIMessage.image = result.image;
+            } else {
+                newAIMessage.content = await generateText(prompt);
+            }
+
             chatMessagesDiv.appendChild(createMessageElement(newAIMessage));
             scrollToBottom();
             showLoadingIndicator(false);
             isAIGenerating = false;
 
-            // Add AI message to Firestore
             if (db && userId) {
                 await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/messages`), {
                     ...newAIMessage,
