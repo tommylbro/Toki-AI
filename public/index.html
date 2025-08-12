@@ -415,6 +415,224 @@
                     const audioData = audioPart.inlineData.data;
                     const mimeType = audioPart.inlineData.mimeType;
 
+                    const sampleRateMatc {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        console.log("Firebase Auth successful");
+
+                        const unsubscribe = onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                                console.log("User UID:", user.uid);
+                            } else {
+                                console.log("User signed out or not authenticated.");
+                                setUserId(null);
+                            }
+                            setIsAuthReady(true);
+                        });
+                        return () => unsubscribe();
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                        setFirestoreError(error.message);
+                        setModalMessage(`Firebase Auth Error: ${error.message}. Please check your connection.`);
+                        setShowErrorModal(true);
+                    }
+                };
+                initFirebase();
+            }, []);
+
+            // --- Check for Marked.js Library ---
+            useEffect(() => {
+                const checkMarked = () => {
+                    if (window.marked) {
+                        setMarkedLoaded(true);
+                    } else {
+                        setTimeout(checkMarked, 100); // Polling for the library to be loaded
+                    }
+                };
+                checkMarked();
+            }, []);
+            
+            // --- Auto-scroll chat and canvas containers ---
+            useEffect(() => {
+                if (chatContainerRef.current) {
+                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                }
+            }, [chatHistory]);
+
+            useEffect(() => {
+                if (canvasContainerRef.current) {
+                    canvasContainerRef.current.scrollTop = canvasContainerRef.current.scrollHeight;
+                }
+            }, [canvasArtifacts]);
+
+
+            // --- Firestore Listener for Canvas Artifacts ---
+            useEffect(() => {
+                if (!isAuthReady || !userId) return;
+                const { collection, onSnapshot, query } = window.firebase;
+                const db = window.firebase.db;
+                
+                if (!db) {
+                    console.error("Firestore DB not available.");
+                    return;
+                }
+
+                const canvasPath = `artifacts/${window.appId}/users/${userId}/canvas`;
+                const q = query(collection(db, canvasPath));
+
+                console.log("Setting up Firestore listener on path:", canvasPath);
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const docs = [];
+                    snapshot.forEach(doc => {
+                        docs.push({ id: doc.id, ...doc.data() });
+                    });
+                    setCanvasArtifacts(docs.sort((a, b) => {
+                        const timeA = a.timestamp ? a.timestamp.toDate() : new Date(0);
+                        const timeB = b.timestamp ? b.timestamp.toDate() : new Date(0);
+                        return timeA - timeB;
+                    }));
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    setFirestoreError(error.message);
+                    setModalMessage(`Firestore Error: ${error.message}. Please check your security rules.`);
+                    setShowErrorModal(true);
+                });
+
+                return () => unsubscribe();
+            }, [isAuthReady, userId]);
+
+            // --- Firestore Listener for Chat History ---
+            useEffect(() => {
+                if (!isAuthReady || !userId) return;
+                const { collection, onSnapshot, query } = window.firebase;
+                const db = window.firebase.db;
+
+                if (!db) {
+                    console.error("Firestore DB not available.");
+                    return;
+                }
+                
+                const conversationPath = `artifacts/${window.appId}/users/${userId}/conversations`;
+                const q = query(collection(db, conversationPath));
+
+                console.log("Setting up Firestore listener on path:", conversationPath);
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const docs = [];
+                    snapshot.forEach(doc => {
+                        docs.push({ id: doc.id, ...doc.data() });
+                    });
+                    setChatHistory(docs.sort((a, b) => {
+                        const timeA = a.timestamp ? a.timestamp.toDate() : new Date(0);
+                        const timeB = b.timestamp ? b.timestamp.toDate() : new Date(0);
+                        return timeA - timeB;
+                    }));
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    setFirestoreError(error.message);
+                    setModalMessage(`Firestore Error: ${error.message}. Please check your security rules.`);
+                    setShowErrorModal(true);
+                });
+
+                return () => unsubscribe();
+            }, [isAuthReady, userId]);
+
+
+            // --- Gemini LLM API Call Function ---
+            const generateContent = async (prompt, history = []) => {
+                setIsAIGenerating(true);
+                const chatHistoryPayload = history.map(item => ({ role: item.role, parts: [{ text: item.text }] }));
+                chatHistoryPayload.push({ role: "user", parts: [{ text: prompt }] });
+                
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                let attempt = 0;
+                const maxAttempts = 5;
+                const baseDelay = 1000;
+                
+                while (attempt < maxAttempts) {
+                    try {
+                        const payload = { contents: chatHistoryPayload };
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            if (response.status === 429) {
+                                throw new Error('Too Many Requests');
+                            }
+                            throw new Error(`API error: ${response.statusText}`);
+                        }
+
+                        const result = await response.json();
+                        if (result.candidates && result.candidates.length > 0 &&
+                            result.candidates[0].content && result.candidates[0].content.parts &&
+                            result.candidates[0].content.parts.length > 0) {
+                            const text = result.candidates[0].content.parts[0].text;
+                            return text;
+                        } else {
+                            throw new Error("Invalid response from API");
+                        }
+                    } catch (error) {
+                        console.error(`Attempt ${attempt + 1} failed:`, error);
+                        attempt++;
+                        if (attempt < maxAttempts) {
+                            const delay = baseDelay * Math.pow(2, attempt);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            // --- Gemini TTS API Call Function ---
+            const handleTextToSpeech = async (text) => {
+                setIsLoadingTTS(true);
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                
+                try {
+                    const payload = {
+                        contents: [{
+                            parts: [{ text: `Say in a clear voice: ${text}` }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Kore" }
+                                }
+                            }
+                        },
+                        model: "gemini-2.5-flash-preview-tts"
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    const candidates = result.candidates;
+                    const audioPart = candidates && candidates[0] && candidates[0].content && candidates[0].content.parts && candidates[0].content.parts[0];
+                    
+                    if (!audioPart || !audioPart.inlineData) {
+                        throw new Error("Invalid TTS response from API");
+                    }
+                    
+                    const audioData = audioPart.inlineData.data;
+                    const mimeType = audioPart.inlineData.mimeType;
+
                     const sampleRateMatc            scrollbar-width: thin;
             scrollbar-color: #4a5568 #1a202c;
         }
