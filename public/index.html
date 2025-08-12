@@ -217,38 +217,10 @@
 
         // UI rendering functions
         const renderChat = () => {
-            contentContainer.innerHTML = '';
-            const chatHtml = `
+            contentContainer.innerHTML = `
                 <div class="flex flex-col h-full bg-gray-800 rounded-lg shadow-xl overflow-hidden">
                     <div id="messages-container" class="flex-1 p-6 space-y-4 overflow-y-auto custom-scrollbar">
-                        ${messages.length === 0 ? `
-                            <div class="flex-1 flex flex-col items-center justify-center text-gray-400 text-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-4">
-                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                                    <line x1="13" x2="13" y1="12" y2="12" />
-                                    <line x1="9" x2="9" y1="12" y2="12" />
-                                </svg>
-                                <h2 class="text-xl font-semibold">Start a conversation</h2>
-                                <p>Type a message below to begin.</p>
-                                <div class="mt-8">
-                                    <h3 class="text-lg font-semibold">Special Commands:</h3>
-                                    <ul class="list-disc list-inside text-left">
-                                        <li><strong>Generate Image:</strong> <code>generate image of [your prompt]</code></li>
-                                        <li><strong>Generate Document:</strong> <code>create a writing document of [your topic]</code></li>
-                                        <li><strong>Generate Code:</strong> <code>create a code document of [your code request]</code></li>
-                                    </ul>
-                                </div>
-                            </div>
-                        ` : ''}
-                        ${messages.map(msg => renderChatMessage(msg)).join('')}
-                        ${isAIGenerating ? `
-                            <div class="flex items-center space-x-2 p-4 rounded-xl my-2 max-w-3xl bg-gray-700 text-gray-100">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
-                                </svg>
-                                <div class="dot-flashing"></div>
-                            </div>
-                        ` : ''}
+                        <!-- Messages will be rendered here dynamically -->
                         <div id="messages-end"></div>
                     </div>
                     <div id="chat-input-container" class="p-4 border-t border-gray-700 bg-gray-800">
@@ -256,9 +228,47 @@
                     </div>
                 </div>
             `;
-            contentContainer.innerHTML = chatHtml;
-
+            const messagesContainer = document.getElementById('messages-container');
             const messagesEnd = document.getElementById('messages-end');
+            
+            if (messages.length === 0) {
+                messagesContainer.innerHTML = `
+                    <div class="flex-1 flex flex-col items-center justify-center text-gray-400 text-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-4">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            <line x1="13" x2="13" y1="12" y2="12" />
+                            <line x1="9" x2="9" y1="12" y2="12" />
+                        </svg>
+                        <h2 class="text-xl font-semibold">Start a conversation</h2>
+                        <p>Type a message below to begin.</p>
+                        <div class="mt-8">
+                            <h3 class="text-lg font-semibold">Special Commands:</h3>
+                            <ul class="list-disc list-inside text-left">
+                                <li><strong>Generate Image:</strong> <code>generate image of [your prompt]</code></li>
+                                <li><strong>Generate Document:</strong> <code>create a writing document of [your topic]</code></li>
+                                <li><strong>Generate Code:</strong> <code>create a code document of [your code request]</code></li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            } else {
+                messages.forEach(msg => {
+                    messagesContainer.appendChild(createMessageElement(msg));
+                });
+            }
+
+            if (isAIGenerating) {
+                const loadingHtml = `
+                    <div class="flex items-center space-x-2 p-4 rounded-xl my-2 max-w-3xl bg-gray-700 text-gray-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13l2 2" /><path d="M7 13l-2 2" /><path d="M12 18h.01" /><path d="M7 21h10" /><path d="M12 4v4" />
+                        </svg>
+                        <div class="dot-flashing"></div>
+                    </div>
+                `;
+                messagesContainer.innerHTML += loadingHtml;
+            }
+
             if (messagesEnd) {
                 messagesEnd.scrollIntoView({ behavior: 'smooth' });
             }
@@ -266,7 +276,7 @@
             renderChatInput();
         };
 
-        const renderChatMessage = (message) => {
+        const createMessageElement = (message) => {
             const isUser = message.role === 'user';
             const isAI = message.role === 'ai';
             const messageClass = isUser ? 'bg-blue-600 text-white self-end' : 'bg-gray-700 text-gray-100 self-start';
@@ -280,41 +290,68 @@
                 </svg>
             `;
             const timestamp = message.timestamp ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString() : '';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex items-start space-x-2 p-4 rounded-xl shadow-lg my-2 max-w-3xl w-full ${messageClass}`;
 
+            const iconDiv = document.createElement('div');
+            iconDiv.className = 'flex-shrink-0 mt-1';
+            iconDiv.innerHTML = icon;
+            messageDiv.appendChild(iconDiv);
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'flex-grow';
+
+            const proseDiv = document.createElement('div');
+            proseDiv.className = 'prose-sm prose-invert';
+            
             // Handle image rendering in the chat bubble
             const imageMatch = message.content?.match(/!\[Generated Image\]\((.*?)\)/);
-            const contentHtml = imageMatch ? `
-                <div class="prose-sm">
-                    <p>${message.content.replace(imageMatch[0], '')}</p>
-                    <img src="${imageMatch[1]}" alt="Generated by AI" class="mt-4 rounded-lg shadow-md max-w-full h-auto" />
-                </div>
-            ` : `
-                <div class="prose-sm" dangerouslySetInnerHTML={{ __html: getParsedMarkdown(message.content) }}></div>
-            `;
+            if (imageMatch) {
+                const textBeforeImage = message.content.replace(imageMatch[0], '');
+                proseDiv.innerHTML = getParsedMarkdown(textBeforeImage);
+                const imgElement = document.createElement('img');
+                imgElement.src = imageMatch[1];
+                imgElement.alt = 'Generated by AI';
+                imgElement.className = 'mt-4 rounded-lg shadow-md max-w-full h-auto';
+                proseDiv.appendChild(imgElement);
+            } else {
+                proseDiv.innerHTML = getParsedMarkdown(message.content);
+            }
+
+            // Append user uploaded image if it exists
+            if (isUser && message.image) {
+                const userImage = document.createElement('img');
+                userImage.src = message.image;
+                userImage.alt = 'User upload';
+                userImage.className = 'mt-2 rounded-lg shadow-md max-w-full h-auto';
+                proseDiv.appendChild(userImage);
+            }
+
+            contentDiv.appendChild(proseDiv);
+            messageDiv.appendChild(contentDiv);
+
+            const timestampDiv = document.createElement('div');
+            timestampDiv.className = 'flex-shrink-0 text-xs text-gray-400 mt-1';
+            timestampDiv.textContent = timestamp;
+            messageDiv.appendChild(timestampDiv);
             
-            const speakButton = isAI ? `
-                <button onclick="handleSpeak('${message.content.replace(/'/g, "\\'")}')" class="flex-shrink-0 text-gray-400 hover:text-white ml-2">
+            if (isAI) {
+                const speakButton = document.createElement('button');
+                speakButton.onclick = () => window.handleSpeak(message.content);
+                speakButton.className = 'flex-shrink-0 text-gray-400 hover:text-white ml-2';
+                speakButton.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
                         <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
                     </svg>
-                </button>
-            ` : '';
+                `;
+                messageDiv.appendChild(speakButton);
+            }
 
-            return `
-                <div class="flex items-start space-x-2 p-4 rounded-xl shadow-lg my-2 max-w-3xl w-full ${messageClass}">
-                    <div class="flex-shrink-0 mt-1">${icon}</div>
-                    <div class="flex-grow">
-                        <div class="prose-sm prose-invert">
-                            ${isUser ? `<p>${message.content}</p>` : getParsedMarkdown(message.content)}
-                            ${message.image ? `<img src="${message.image}" alt="User upload" class="mt-2 rounded-lg shadow-md max-w-full h-auto" />` : ''}
-                        </div>
-                    </div>
-                    <div class="flex-shrink-0 text-xs text-gray-400 mt-1">${timestamp}</div>
-                    ${speakButton}
-                </div>
-            `;
+            return messageDiv;
         };
+        
 
         const renderChatInput = () => {
             const chatInputContainer = document.getElementById('chat-input-container');
@@ -715,12 +752,12 @@
         };
 
         // Window onload event to start the app
-        window.onload = () => {
+        document.addEventListener('DOMContentLoaded', () => {
             // Check if Firebase auth is already ready, if not, it will be handled by the onAuthStateChanged listener
             if (isAuthReady) {
                 setupApp();
             }
-        };
+        });
     </script>
 </body>
 </html>
