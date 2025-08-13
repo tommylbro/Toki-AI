@@ -223,9 +223,14 @@
             const [mode, setMode] = useState('chat');
             const [rewritingTone, setRewritingTone] = useState('formal');
             const [errorMessage, setErrorMessage] = useState(null);
+            // State for storing the user's API key
+            const [apiKey, setApiKey] = useState('');
             const chatContainerRef = useRef(null);
-            // FIX: Removed the hardcoded API key to use the environment's key.
-            const apiKey = "";
+            
+            // Note: The API key is an empty string here to be filled in by the Canvas environment.
+            // If you are running this code outside of the Canvas, you must replace the empty string with your own API key.
+            // A UI element has been added to allow you to input your key directly.
+            // const apiKey = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
 
             const initialWelcomeMessage = { role: 'model', content: 'Hello! I am Toki, your AI assistant. How can I help you today?' };
             const [chatHistory, setChatHistory] = useState([initialWelcomeMessage]);
@@ -272,6 +277,9 @@
             
             // Text Generation Function
             const generateText = async (history, prompt) => {
+                if (!apiKey) {
+                    throw new Error("API key is not set. Please provide a valid key.");
+                }
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
                 const contents = history.map(message => ({
@@ -304,6 +312,9 @@
             
             // Image Generation Function
             const generateImage = async (prompt) => {
+                if (!apiKey) {
+                    throw new Error("API key is not set. Please provide a valid key.");
+                }
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
                 const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1} };
 
@@ -327,6 +338,9 @@
 
             // TTS Generation Function
             const generateTTS = async (text) => {
+                if (!apiKey) {
+                    throw new Error("API key is not set. Please provide a valid key.");
+                }
                 const payload = {
                     contents: [{
                         parts: [{ text: text }]
@@ -370,10 +384,14 @@
                 }
             };
 
-            // FIX: Refactored message handling for all modes to ensure correct history is passed to the API.
             const handleSendMessage = async () => {
                 const prompt = input.trim();
                 if (!prompt || isAIGenerating) return;
+
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
 
                 setIsAIGenerating(true);
                 const userMessage = { role: 'user', content: prompt };
@@ -381,130 +399,143 @@
 
                 try {
                     if (mode === 'chat') {
-                        // FIX: Create new history with user message before calling the API
                         const newChatHistory = [...chatHistory, userMessage];
                         setChatHistory(newChatHistory);
                         const responseContent = await generateText(newChatHistory, prompt);
                         setChatHistory(prev => [...prev, { role: 'model', content: responseContent }]);
                     } else if (mode === 'image') {
-                        // FIX: Added the user message to the history and cleared the input
                         setImageHistory(prev => [...prev, userMessage]);
                         const imageUrl = await generateImage(prompt);
                         setImageHistory(prev => [...prev, { role: 'model-image', content: imageUrl }]);
                     }
                 } catch (error) {
                     console.error("Failed to process request:", error);
-                    setErrorMessage('An error occurred while processing your request. Please ensure you have a valid API key.');
-                    // Add an error message to the history if the API fails
+                    setErrorMessage(error.message || 'An error occurred while processing your request. Please ensure you have a valid API key.');
                     if (mode === 'chat') {
-                        setChatHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                        setChatHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                     } else if (mode === 'image') {
-                        setImageHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                        setImageHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                     }
                 } finally {
                     setIsAIGenerating(false);
                 }
             };
             
-            // Feature 1: Summarize Text ✨
             const handleSummarize = async () => {
                 const prompt = input.trim();
                 if (!prompt || isAIGenerating) return;
+
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
                 
                 setIsAIGenerating(true);
                 const userMessage = { role: 'user', content: prompt };
                 setInput('');
 
                 try {
-                    // FIX: Create new history with user message before calling the API
                     const newWritingHistory = [...writingHistory, userMessage];
                     setWritingHistory(newWritingHistory);
                     const responseContent = await generateText(newWritingHistory, `Summarize the following text:\n\n${userMessage.content}`);
                     setWritingHistory(prev => [...prev, { role: 'model', content: `**Summary:**\n\n${responseContent}` }]);
                 } catch (error) {
                     console.error("Failed to summarize text:", error);
-                    setErrorMessage('An error occurred while summarizing the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                    setErrorMessage(error.message || 'An error occurred while summarizing the text. Please ensure you have a valid API key.');
+                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                 } finally {
                     setIsAIGenerating(false);
                 }
             };
 
-            // Feature 2: Continue Writing ✨
             const handleContinueWriting = async () => {
                 const prompt = input.trim();
                 if (!prompt || isAIGenerating) return;
+
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
 
                 setIsAIGenerating(true);
                 const userMessage = { role: 'user', content: prompt };
                 setInput('');
 
                 try {
-                    // FIX: Create new history with user message before calling the API
                     const newWritingHistory = [...writingHistory, userMessage];
                     setWritingHistory(newWritingHistory);
                     const responseContent = await generateText(newWritingHistory, `Continue the following text:\n\n${userMessage.content}`);
                     setWritingHistory(prev => [...prev, { role: 'model', content: `**Continued Text:**\n\n${responseContent}` }]);
                 } catch (error) {
                     console.error("Failed to continue writing:", error);
-                    setErrorMessage('An error occurred while continuing the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                    setErrorMessage(error.message || 'An error occurred while continuing the text. Please ensure you have a valid API key.');
+                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                 } finally {
                     setIsAIGenerating(false);
                 }
             };
             
-            // New Feature 3: Rewrite Text ✨
             const handleRewrite = async () => {
                 const prompt = input.trim();
                 if (!prompt || isAIGenerating) return;
+
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
 
                 setIsAIGenerating(true);
                 const userMessage = { role: 'user', content: prompt };
                 setInput('');
 
                 try {
-                    // FIX: Create new history with user message before calling the API
                     const newWritingHistory = [...writingHistory, userMessage];
                     setWritingHistory(newWritingHistory);
                     const responseContent = await generateText(newWritingHistory, `Rewrite the following text in a ${rewritingTone} tone:\n\n${userMessage.content}`);
                     setWritingHistory(prev => [...prev, { role: 'model', content: `**Rewritten (${rewritingTone}):**\n\n${responseContent}` }]);
                 } catch (error) {
                     console.error("Failed to rewrite text:", error);
-                    setErrorMessage('An error occurred while rewriting the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                    setErrorMessage(error.message || 'An error occurred while rewriting the text. Please ensure you have a valid API key.');
+                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                 } finally {
                     setIsAIGenerating(false);
                 }
             };
             
-            // New Feature 4: Explain Code ✨
             const handleExplainCode = async () => {
                 const prompt = input.trim();
                 if (!prompt || isAIGenerating) return;
+
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
 
                 setIsAIGenerating(true);
                 const userMessage = { role: 'user', content: prompt };
                 setInput('');
 
                 try {
-                    // FIX: Create new history with user message before calling the API
                     const newCodeHistory = [...codeHistory, userMessage];
                     setCodeHistory(newCodeHistory);
                     const responseContent = await generateText(newCodeHistory, `Explain the following code snippet. Break down what it does, how it works, and its purpose:\n\n${userMessage.content}`);
                     setCodeHistory(prev => [...prev, { role: 'model', content: `**Code Explanation:**\n\n${responseContent}` }]);
                 } catch (error) {
                     console.error("Failed to explain code:", error);
-                    setErrorMessage('An error occurred while explaining the code. Please ensure you have a valid API key.');
-                    setCodeHistory(prev => [...prev, { role: 'model', content: 'An error occurred. Please ensure you have a valid API key.' }]);
+                    setErrorMessage(error.message || 'An error occurred while explaining the code. Please ensure you have a valid API key.');
+                    setCodeHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
                 } finally {
                     setIsAIGenerating(false);
                 }
             };
             
-            // Existing Feature: Read Aloud a message with Gemini TTS API ✨
             const handleReadAloud = async (text) => {
                 if (isAIGenerating) return;
+                
+                if (!apiKey) {
+                    setErrorMessage("Please enter your API key to continue.");
+                    return;
+                }
 
                 setIsAIGenerating(true);
                 setErrorMessage('Generating audio...');
@@ -520,7 +551,7 @@
                     setErrorMessage('Playing audio...');
                 } catch (error) {
                     console.error("Failed to read aloud:", error);
-                    setErrorMessage('An error occurred while generating audio. Please ensure you have a valid API key.');
+                    setErrorMessage(error.message || 'An error occurred while generating audio. Please ensure you have a valid API key.');
                 } finally {
                     setIsAIGenerating(false);
                 }
@@ -532,7 +563,6 @@
                     if (mode === 'chat' || mode === 'image') {
                         handleSendMessage();
                     } else if (mode === 'writing' || mode === 'code') {
-                        // The user can't send messages in writing or code modes with enter, they have to click the button
                         return;
                     }
                 }
@@ -553,7 +583,6 @@
                 }
             };
 
-            // This function determines which history to render
             const getActiveHistory = () => {
                 switch (mode) {
                     case 'writing':
@@ -597,21 +626,33 @@
                     </main>
                     <footer className="p-4 bg-gray-800 shadow-inner">
                         <div className="flex flex-col sm:flex-row items-stretch gap-2 mb-4">
-                             <div className="flex-1">
-                                 <label className="block text-sm font-medium mb-1 text-gray-300">
-                                     Select Mode:
-                                 </label>
-                                 <select
-                                     value={mode}
-                                     onChange={(e) => setMode(e.target.value)}
-                                     className="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                 >
-                                     <option value="writing">Writing</option>
-                                     <option value="code">Code</option>
-                                     <option value="image">Image Generation</option>
-                                     <option value="chat">Gemini Chat</option>
-                                 </select>
-                             </div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium mb-1 text-gray-300">
+                                    Select Mode:
+                                </label>
+                                <select
+                                    value={mode}
+                                    onChange={(e) => setMode(e.target.value)}
+                                    className="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                    <option value="writing">Writing</option>
+                                    <option value="code">Code</option>
+                                    <option value="image">Image Generation</option>
+                                    <option value="chat">Gemini Chat</option>
+                                </select>
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium mb-1 text-gray-300">
+                                    API Key:
+                                </label>
+                                <input
+                                    type="password"
+                                    className="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Paste your API key here..."
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                />
+                            </div>
                         </div>
                         <div className="flex items-center gap-2">
                             {mode === 'writing' && (
