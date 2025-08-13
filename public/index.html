@@ -1,346 +1,618 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toki AI</title>
-    <!-- Tailwind CSS CDN for styling -->
+    <title>Toki AI Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React and ReactDOM CDNs -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Third-party library for markdown rendering -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
-    <!-- Babel Standalone for JSX compilation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
-    <!-- DOMPurify for sanitizing HTML -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.6/purify.min.js"></script>
-
     <style>
-        /* Import a clean, modern font */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #1a202c;
-            color: #e2e8f0;
         }
-        /* Style adjustments for rendered markdown content */
-        .prose-sm {
-            font-size: 0.875rem;
+        .chat-bubble {
+            max-width: 80%;
+            padding: 1rem;
+            border-radius: 1.5rem;
+            margin-bottom: 0.5rem;
+            position: relative;
         }
-        .prose {
-            color: inherit;
+        .user-bubble {
+            background-color: #3b82f6; /* Blue */
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 0.5rem;
         }
-        .prose h1, .prose h2, .prose h3, .prose h4 {
-            color: inherit;
+        .ai-bubble {
+            background-color: #e5e7eb; /* Light gray */
+            color: #1f2937; /* Dark gray */
+            align-self: flex-start;
+            border-bottom-left-radius: 0.5rem;
         }
-        .prose-invert code {
+        .loading-dots {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-dots div {
+            width: 8px;
+            height: 8px;
+            background-color: #9ca3af;
+            border-radius: 50%;
+            margin: 0 4px;
+            animation: bounce 1s infinite;
+        }
+        .loading-dots div:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .loading-dots div:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        /* Custom scrollbar for chat history */
+        #chat-history::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat-history::-webkit-scrollbar-track {
+            background: #2a2a47;
+        }
+        #chat-history::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+        #chat-history::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        .read-aloud-btn {
             background-color: #4a5568;
-            color: #e2e8f0;
+            color: white;
+            border-radius: 9999px; /* rounded-full */
+            padding: 0.5rem;
+            margin-left: 0.5rem;
+            transition: background-color 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .read-aloud-btn:hover {
+            background-color: #2d3748;
+        }
+        .image-container {
+            padding: 1rem;
+            background-color: #3a3a5a;
+            border-radius: 0.75rem;
+            margin-top: 0.5rem;
         }
     </style>
 </head>
-<body class="dark bg-gray-900 text-gray-200 flex flex-col h-screen">
-    <div id="root" class="flex-1 overflow-hidden flex flex-col"></div>
-    <!-- Loading overlay displayed while the app is initializing -->
-    <div id="loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-50 transition-opacity duration-300">
-        <div class="flex items-center space-x-2 text-indigo-400">
-            <div class="w-4 h-4 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0s;"></div>
-            <div class="w-4 h-4 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.2s;"></div>
-            <div class="w-4 h-4 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.4s;"></div>
+<body class="bg-[#1e1e2e] flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- Main Container -->
+    <div class="bg-[#2a2a47] rounded-xl shadow-lg w-full max-w-4xl flex flex-col h-[90vh]">
+        
+        <!-- Header -->
+        <header class="bg-[#1e1e2e] text-white p-4 rounded-t-xl flex items-center justify-between">
+            <h1 class="text-2xl font-bold">Toki AI</h1>
+        </header>
+
+        <!-- Chat History -->
+        <div id="chat-history" class="flex-grow overflow-y-auto p-4 flex flex-col space-y-4 bg-[#2a2a47]">
+            <!-- The initial welcome message is added via JavaScript -->
         </div>
-        <span class="mt-4 text-gray-400">Loading application...</span>
+
+        <!-- Message Input and API Key section -->
+        <div class="p-4 bg-[#1e1e2e] rounded-b-xl">
+            <div class="flex items-center justify-between mb-4 space-x-4">
+                <!-- Select Mode -->
+                <div class="flex-1">
+                    <label for="select-mode" class="block text-gray-300 text-sm font-medium mb-1">Select Mode:</label>
+                    <select id="select-mode" class="w-full bg-[#3a3a5a] text-white p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="gemini-chat">Gemini Chat</option>
+                        <option value="image-understanding">Image Understanding</option>
+                    </select>
+                </div>
+                <!-- API Key -->
+                <div class="flex-1">
+                    <label for="api-key" class="block text-gray-300 text-sm font-medium mb-1">API Key:</label>
+                    <input type="password" id="api-key" class="w-full bg-[#3a3a5a] text-white p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter your API key" value="AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g">
+                </div>
+            </div>
+            
+            <!-- Message Input, Filter and new Image Upload button -->
+            <div class="flex space-x-2 items-center">
+                <input type="file" id="image-upload" accept="image/*" class="hidden">
+                <button id="image-upload-btn" class="bg-gray-500 text-white rounded-full p-3 hover:bg-gray-600 transition-colors duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75L4.5 17.25L4.5 15.75L6.75 17.25L9 15.75L11.25 17.25L13.5 15.75L15.75 17.25L18 15.75L20.25 17.25L22.5 15.75L22.5 12L20.25 10.5L18 12L15.75 10.5L13.5 12L11.25 10.5L9 12L6.75 10.5L4.5 12L2.25 10.5L2.25 15.75Z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9a3 3 0 100-6 3 3 0 000 6z" />
+                    </svg>
+                </button>
+                <button id="summarize-btn" class="bg-purple-500 text-white rounded-full px-4 py-3 hover:bg-purple-600 transition-colors duration-200">
+                    ✨ Summarize
+                </button>
+                <button id="generate-image-btn" class="bg-green-500 text-white rounded-full px-4 py-3 hover:bg-green-600 transition-colors duration-200">
+                    ✨ Generate Image
+                </button>
+
+                <!-- New filter dropdown for image generation -->
+                <select id="image-filter" class="w-1/4 bg-[#3a3a5a] text-white p-3 rounded-full border-2 border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200">
+                    <option value="">No Filter</option>
+                    <option value="digital painting">Digital painting</option>
+                    <option value="watercolor">Watercolor</option>
+                    <option value="oil painting">Oil painting</option>
+                    <option value="sketch">Sketch</option>
+                    <option value="pixel art">Pixel art</option>
+                    <option value="photorealistic">Photorealistic</option>
+                    <option value="cartoon style">Cartoon style</option>
+                    <option value="simple, clean style">Simple Idea</option>
+                </select>
+
+                <input type="text" id="user-input" placeholder="Start a conversation with Toki..." class="flex-grow p-3 rounded-full border-2 border-transparent bg-[#3a3a5a] text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200">
+                <button id="send-btn" class="bg-blue-500 text-white rounded-full p-3 hover:bg-blue-600 transition-colors duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                </button>
+            </div>
+        </div>
     </div>
 
-    <!-- The main application script using Babel for JSX compilation -->
-    <script type="text/babel">
-        // Import React and hooks from the global React object
-        const { useState, useEffect, useRef } = React;
+    <!-- Custom Modal for Alert -->
+    <div id="custom-alert" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full">
+            <h2 id="alert-title" class="text-xl font-bold mb-4"></h2>
+            <p id="alert-message" class="text-gray-700 mb-6"></p>
+            <button id="alert-ok-btn" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200">OK</button>
+        </div>
+    </div>
 
-        // Custom Modal Component for displaying messages instead of alert()
-        const Modal = ({ message, onClose }) => {
-            if (!message) return null;
-
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
-                        <p className="text-white mb-4">{message}</p>
-                        <button
-                            className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-full hover:bg-indigo-700 transition-colors"
-                            onClick={onClose}
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            );
-        };
+    <script>
+        // Get references to DOM elements
+        const apiKeyInput = document.getElementById('api-key');
+        const chatHistory = document.getElementById('chat-history');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const imageUploadInput = document.getElementById('image-upload');
+        const imageUploadBtn = document.getElementById('image-upload-btn');
+        const selectMode = document.getElementById('select-mode');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const generateImageBtn = document.getElementById('generate-image-btn');
+        const imageFilter = document.getElementById('image-filter');
         
-        // Simple mock icons to avoid external dependencies
-        const SendIcon = ({ size = 24 }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" />
-            </svg>
-        );
-        const UserIcon = ({ size = 24 }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-            </svg>
-        );
-        const BotIcon = ({ size = 24 }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L6 22H18L12 2Z" /><path d="M12 2L6 22H18L12 2Z" />
-            </svg>
-        );
-        const LoadingIndicator = () => (
-            <div className="flex items-center space-x-2 text-indigo-400">
-                <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0s' }}></div>
-                <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-            </div>
-        );
-        const SpeakerIcon = ({ size = 20, onClick }) => (
-            <svg onClick={onClick} className="cursor-pointer text-gray-400 hover:text-white transition-colors" xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 5L6 9H2v6h4l5 4V5z" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-            </svg>
-        );
+        // Custom Alert elements
+        const customAlert = document.getElementById('custom-alert');
+        const alertTitle = document.getElementById('alert-title');
+        const alertMessage = document.getElementById('alert-message');
+        const alertOkBtn = document.getElementById('alert-ok-btn');
+
+        // Define API URLs
+        const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
+        const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
+        // This image generation API URL has been updated to a free-tier model.
+        const imageGenerationApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent`;
         
-        // Helper function to convert base64 to an ArrayBuffer
-        const base64ToArrayBuffer = (base64) => {
-            const binaryString = window.atob(base64);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            return bytes.buffer;
-        };
+        // Chat history state
+        let chatHistoryArray = [];
+        
+        // Function to show custom alert message
+        function showAlert(title, message) {
+            alertTitle.textContent = title;
+            alertMessage.textContent = message;
+            customAlert.style.display = 'flex';
+        }
 
-        // Helper function to convert raw PCM to a WAV Blob
-        const pcmToWav = (pcmData, sampleRate) => {
-            const pcm16 = new Int16Array(pcmData);
-            const buffer = new ArrayBuffer(44 + pcm16.length * 2);
-            const view = new DataView(buffer);
-
-            const writeString = (offset, str) => {
-                for (let i = 0; i < str.length; i++) {
-                    view.setUint8(offset + i, str.charCodeAt(i));
-                }
-            };
-
-            // RIFF chunk
-            writeString(0, 'RIFF');
-            view.setUint32(4, 36 + pcm16.length * 2, true);
-            writeString(8, 'WAVE');
-
-            // fmt chunk
-            writeString(12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true); // PCM format
-            view.setUint16(22, 1, true); // Mono
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2, true); // Byte rate
-            view.setUint16(32, 2, true); // Block align
-            view.setUint16(34, 16, true); // Bits per sample
-
-            // data chunk
-            writeString(36, 'data');
-            view.setUint32(40, pcm16.length * 2, true);
+        // Function to create a chat bubble element for new messages
+        function createChatMessage(message, sender, imageData = null) {
+            const messageContainer = document.createElement('div');
+            messageContainer.classList.add('flex', 'items-start', 'space-x-3', 'p-2', 'rounded-lg', 'bg-[#3a3a5a]');
             
-            // Write PCM data
-            for (let i = 0; i < pcm16.length; i++) {
-                view.setInt16(44 + i * 2, pcm16[i], true);
+            const iconContainer = document.createElement('div');
+            iconContainer.classList.add('w-8', 'h-8', 'rounded-full', 'flex', 'items-center', 'justify-center');
+            
+            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            iconSvg.classList.add('h-5', 'w-5');
+            iconSvg.setAttribute('viewBox', '0 0 20 20');
+            iconSvg.setAttribute('fill', 'currentColor');
+            
+            const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            iconPath.setAttribute('fill-rule', 'evenodd');
+            iconPath.setAttribute('clip-rule', 'evenodd');
+            iconPath.setAttribute('d', 'M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z');
+            
+            iconSvg.appendChild(iconPath);
+            iconContainer.appendChild(iconSvg);
+            
+            const textContainer = document.createElement('div');
+            textContainer.classList.add('flex-grow');
+            
+            const senderName = document.createElement('p');
+            senderName.classList.add('text-gray-300', 'font-semibold');
+            
+            if (sender === 'user') {
+                senderName.textContent = 'You';
+                iconContainer.classList.add('bg-blue-600');
+                iconSvg.classList.add('text-white');
+            } else {
+                senderName.textContent = 'Toki';
+                iconContainer.classList.add('bg-gray-600');
+                iconSvg.classList.add('text-gray-300');
             }
 
-            return new Blob([view], { type: 'audio/wav' });
-        };
-
-        // A simple wrapper component for markdown rendering with code highlighting
-        const MarkdownRenderer = ({ content }) => {
-            if (!window.marked || !content) {
-                return null;
+            textContainer.appendChild(senderName);
+            
+            // Only add a text paragraph if there is a message
+            if (message) {
+                const messageText = document.createElement('p');
+                messageText.classList.add('text-white', 'mt-1');
+                messageText.textContent = message;
+                textContainer.appendChild(messageText);
             }
+            
+            // Only add an image if there is image data
+            if (imageData) {
+                const imageDisplayContainer = document.createElement('div');
+                imageDisplayContainer.classList.add('image-container');
+                const imageEl = document.createElement('img');
+                imageEl.src = imageData;
+                imageEl.classList.add('my-2', 'rounded-lg', 'max-w-full', 'max-h-64', 'object-contain');
+                imageDisplayContainer.appendChild(imageEl);
+                textContainer.appendChild(imageDisplayContainer);
+            }
+
+            // Add Read Aloud button for AI messages with text
+            if (sender === 'ai' && message) {
+                const readAloudBtn = document.createElement('button');
+                readAloudBtn.classList.add('read-aloud-btn');
+                readAloudBtn.innerHTML = `✨ Read Aloud`;
+                readAloudBtn.onclick = () => readAloud(message);
+                textContainer.appendChild(readAloudBtn);
+            }
+            
+            messageContainer.appendChild(iconContainer);
+            messageContainer.appendChild(textContainer);
+            
+            return messageContainer;
+        }
+
+        // Function to show a loading indicator
+        function showLoadingIndicator() {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'loading-indicator';
+            loadingDiv.classList.add('loading-dots', 'p-2', 'flex', 'space-x-1');
+            loadingDiv.innerHTML = `
+                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
+                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-300"></div>
+            `;
+            chatHistory.appendChild(loadingDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // Function to hide the loading indicator
+        function hideLoadingIndicator() {
+            const loadingDiv = document.getElementById('loading-indicator');
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        }
+
+        // Exponential backoff helper function
+        async function fetchWithBackoff(url, options, maxRetries = 5, initialDelay = 1000) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return response;
+                    }
+                    if (response.status === 429 || response.status >= 500) {
+                        const delay = initialDelay * Math.pow(2, i);
+                        console.warn(`Retrying after ${delay}ms due to status ${response.status}`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    return response; // For non-retryable errors, return the response to be handled by the caller
+                } catch (error) {
+                    const delay = initialDelay * Math.pow(2, i);
+                    console.error(`Fetch failed, retrying after ${delay}ms:`, error);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            throw new Error(`Fetch failed after ${maxRetries} retries`);
+        }
+
+        // Main function to send a text message and get a response
+        async function sendChatMessage(userMessage, imageData = null) {
+            const apiKey = apiKeyInput.value.trim();
+            
+            if (!userMessage && !imageData) {
+                return;
+            }
+            if (!apiKey) {
+                showAlert('API Key Required', 'Please enter your API key to use the chat.');
+                return;
+            }
+            
+            let newUserMessage = { role: "user", parts: [] };
+            if (imageData) {
+                newUserMessage.parts.push({ text: userMessage });
+                newUserMessage.parts.push({ inlineData: { mimeType: "image/png", data: imageData.split(',')[1] } });
+            } else {
+                newUserMessage.parts.push({ text: userMessage });
+            }
+
+            // Add user's message to the chat history array
+            chatHistoryArray.push(newUserMessage);
+
+            showLoadingIndicator();
+            
             try {
-                const sanitizedHtml = DOMPurify.sanitize(window.marked.parse(content));
-                return <div className="prose prose-invert prose-sm text-gray-200 max-w-none break-words" dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />;
+                const payload = {
+                    contents: chatHistoryArray
+                };
+                
+                const response = await fetchWithBackoff(`${textApiUrl}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 && 
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const aiResponse = result.candidates[0].content.parts[0].text;
+                    hideLoadingIndicator();
+                    const aiMessageElement = createChatMessage(aiResponse, 'ai');
+                    chatHistory.appendChild(aiMessageElement);
+                    
+                    // Add AI's message to the chat history array
+                    chatHistoryArray.push({
+                        role: "model",
+                        parts: [{ text: aiResponse }]
+                    });
+
+                } else {
+                    hideLoadingIndicator();
+                    const errorMessage = createChatMessage('Error: Could not get a response from the API. Please check your API key and try again.', 'ai');
+                    chatHistory.appendChild(errorMessage);
+                }
+
             } catch (error) {
-                console.error("Markdown rendering failed:", error);
-                return <div className="text-red-400">Error rendering markdown.</div>;
+                hideLoadingIndicator();
+                console.error('Error sending message:', error);
+                const errorMessage = createChatMessage('An unexpected error occurred. Please try again.', 'ai');
+                chatHistory.appendChild(errorMessage);
             }
-        };
 
-        const ChatMessage = ({ message, onReadAloud }) => {
-            const { content, role } = message;
-            const isUser = role === 'user';
-            const bgColor = isUser ? 'bg-gray-800' : 'bg-gray-700';
-            const icon = isUser ? <UserIcon size={20} /> : <BotIcon size={20} />;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            userInput.value = ''; // Clear user input
+        }
 
-            return (
-                <div className={`flex items-start gap-4 p-4 rounded-xl shadow-md ${bgColor} `}>
-                    <div className="flex-shrink-0">
-                        <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white">
-                            {icon}
-                        </div>
-                    </div>
-                    <div className="flex-1">
-                        <div className="flex justify-between items-center">
-                            <p className="font-semibold capitalize">{isUser ? 'You' : 'Toki'}</p>
-                            {!isUser && (
-                                <SpeakerIcon onClick={() => onReadAloud(content)} />
-                            )}
-                        </div>
-                        <div className="mt-1 text-sm">
-                            <MarkdownRenderer content={content} />
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const ImageMessage = ({ message }) => {
-            const { content: imageUrl } = message;
-            return (
-                <div className={`flex items-start gap-4 p-4 rounded-xl shadow-md bg-gray-700`}>
-                    <div className="flex-shrink-0">
-                        <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white">
-                            <BotIcon size={20} />
-                        </div>
-                    </div>
-                    <div className="flex-1">
-                        <p className="font-semibold">Toki</p>
-                        <div className="mt-1 text-sm">
-                            <img src={imageUrl} alt="Generated content" className="rounded-lg max-w-full h-auto" />
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const App = () => {
-            const [input, setInput] = useState('');
-            const [isAIGenerating, setIsAIGenerating] = useState(false);
-            const [mode, setMode] = useState('chat');
-            const [rewritingTone, setRewritingTone] = useState('formal');
-            const [errorMessage, setErrorMessage] = useState(null);
-            // State for storing the user's API key
-            const [apiKey, setApiKey] = useState('');
-            const chatContainerRef = useRef(null);
+        // Main function for image understanding mode
+        async function sendImageUnderstandingMessage(userMessage, imageData) {
+            const apiKey = apiKeyInput.value.trim();
             
-            // Note: The API key is an empty string here to be filled in by the Canvas environment.
-            // If you are running this code outside of the Canvas, you must replace the empty string with your own API key.
-            // A UI element has been added to allow you to input your key directly.
-            // const apiKey = "AIzaSyBvD0xGYQpFTND8Eqnh-KWhDA9YKQHZ6jg";
+            if (!imageData) {
+                showAlert('Image Required', 'Please upload an image to use Image Understanding mode.');
+                return;
+            }
+            if (!apiKey) {
+                showAlert('API Key Required', 'Please enter your API key to use the chat.');
+                return;
+            }
 
-            const initialWelcomeMessage = { role: 'model', content: 'Hello! I am Toki, your AI assistant. How can I help you today?' };
-            const [chatHistory, setChatHistory] = useState([initialWelcomeMessage]);
-            const [writingHistory, setWritingHistory] = useState([]);
-            const [codeHistory, setCodeHistory] = useState([]);
-            const [imageHistory, setImageHistory] = useState([]);
+            // Create user message for the history
+            const userMessageElement = createChatMessage(userMessage, 'user', imageData);
+            chatHistory.appendChild(userMessageElement);
+            userInput.value = '';
+            chatHistory.scrollTop = chatHistory.scrollHeight;
 
-            // This useEffect hook runs once on component mount to hide the loading overlay.
-            useEffect(() => {
-                const overlay = document.getElementById('loading-overlay');
-                if (overlay) {
-                    overlay.style.opacity = '0';
-                    setTimeout(() => overlay.style.display = 'none', 300);
-                }
-            }, []);
+            showLoadingIndicator();
 
-            // This useEffect hook auto-scrolls the chat window when new messages are added.
-            useEffect(() => {
-                if (chatContainerRef.current) {
-                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-                }
-            }, [chatHistory, writingHistory, codeHistory, imageHistory, isAIGenerating]);
-
-            // Fetcher utility for API calls with exponential backoff
-            const fetchWithRetry = async (url, options, retries = 3) => {
-                let delay = 1000;
-                for (let i = 0; i < retries; i++) {
-                    try {
-                        const response = await fetch(url, options);
-                        if (response.ok) {
-                            return await response.json();
-                        } else if (response.status === 429) {
-                            await new Promise(resolve => setTimeout(resolve, delay));
-                            delay *= 2;
-                        } else {
-                            const errorText = await response.text();
-                            throw new Error(`API call failed with status: ${response.status}. Response: ${errorText}`);
+            try {
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: userMessage },
+                                {
+                                    inlineData: {
+                                        mimeType: "image/png",
+                                        data: imageData.split(',')[1]
+                                    }
+                                }
+                            ]
                         }
-                    } catch (error) {
-                        if (i === retries - 1) throw error;
-                    }
-                }
-            };
-            
-            // Text Generation Function
-            const generateText = async (history, prompt) => {
-                if (!apiKey) {
-                    throw new Error("API key is not set. Please provide a valid key.");
-                }
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-                const contents = history.map(message => ({
-                    role: message.role === 'user' ? 'user' : 'model',
-                    parts: [{ text: message.content }]
-                }));
+                    ],
+                };
                 
-                // Add the new prompt to the contents array for the API call
-                contents.push({ role: 'user', parts: [{ text: prompt }] });
-
-                const payload = { contents };
+                const response = await fetchWithBackoff(`${textApiUrl}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
                 
-                try {
-                    const result = await fetchWithRetry(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 && 
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const aiResponse = result.candidates[0].content.parts[0].text;
+                    hideLoadingIndicator();
+                    const aiMessageElement = createChatMessage(aiResponse, 'ai');
+                    chatHistory.appendChild(aiMessageElement);
                     
-                    if (result && result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0 && result.candidates[0].content.parts[0].text) {
-                        return result.candidates[0].content.parts[0].text;
-                    } else {
-                        throw new Error("Invalid API response format");
-                    }
-                } catch (error) {
-                    console.error("Failed to generate content:", error);
-                    throw error;
+                    // The conversation for image understanding is not added to chatHistoryArray for continuity
+                    // to prevent issues with multimodal prompts in subsequent calls.
+
+                } else {
+                    hideLoadingIndicator();
+                    const errorMessage = createChatMessage('Error: Could not get a response from the API. Please check your API key and try again.', 'ai');
+                    chatHistory.appendChild(errorMessage);
                 }
-            };
+
+            } catch (error) {
+                hideLoadingIndicator();
+                console.error('Error sending message:', error);
+                const errorMessage = createChatMessage('An unexpected error occurred. Please try again.', 'ai');
+                chatHistory.appendChild(errorMessage);
+            }
+
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+
+        async function summarizeConversation() {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                showAlert('API Key Required', 'Please enter your API key to use this feature.');
+                return;
+            }
+            if (chatHistoryArray.length === 0) {
+                const errorMessage = createChatMessage('No conversation to summarize.', 'ai');
+                chatHistory.appendChild(errorMessage);
+                return;
+            }
+
+            showLoadingIndicator();
+
+            try {
+                // Create a new payload for the summary request
+                const summaryPayload = {
+                    contents: [
+                        ...chatHistoryArray,
+                        { role: "user", parts: [{ text: "Please provide a concise summary of the conversation above." }] }
+                    ]
+                };
+
+                const response = await fetchWithBackoff(`${textApiUrl}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(summaryPayload)
+                });
+
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 && 
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const summaryResponse = result.candidates[0].content.parts[0].text;
+                    hideLoadingIndicator();
+                    const summaryMessageElement = createChatMessage("Here is a summary:\n\n" + summaryResponse, 'ai');
+                    chatHistory.appendChild(summaryMessageElement);
+                } else {
+                    hideLoadingIndicator();
+                    const errorMessage = createChatMessage('Error: Could not summarize the conversation.', 'ai');
+                    chatHistory.appendChild(errorMessage);
+                }
+
+            } catch (error) {
+                hideLoadingIndicator();
+                console.error('Summarization Error:', error);
+                const errorMessage = createChatMessage('An unexpected error occurred while summarizing.', 'ai');
+                chatHistory.appendChild(errorMessage);
+            }
+
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            userInput.value = ''; // Clear user input
+        }
+
+        async function generateImage() {
+            const apiKey = apiKeyInput.value.trim();
+            let prompt = userInput.value.trim();
+            const filter = imageFilter.value;
             
-            // Image Generation Function
-            const generateImage = async (prompt) => {
-                if (!apiKey) {
-                    throw new Error("API key is not set. Please provide a valid key.");
-                }
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
-                const payload = { instances: [{ prompt: prompt }], parameters: { "sampleCount": 1} };
+            if (!prompt) {
+                showAlert('Prompt Required', 'Please enter a text prompt to generate an image.');
+                return;
+            }
+            if (!apiKey) {
+                showAlert('API Key Required', 'Please enter your API key.');
+                return;
+            }
+            
+            // Combine the user's prompt with the selected filter
+            let fullPrompt = prompt;
+            if (filter) {
+                fullPrompt = `${prompt}, in ${filter} style`;
+            }
 
-                try {
-                    const result = await fetchWithRetry(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+            // Create a user message to show the prompt
+            const userMessageElement = createChatMessage(`Generating an image for: "${fullPrompt}"`, 'user');
+            chatHistory.appendChild(userMessageElement);
+            userInput.value = '';
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            showLoadingIndicator();
+
+            try {
+                // We're now using the gemini-2.0-flash-preview-image-generation model.
+                // It has a different payload structure and API response compared to the previous model.
+                const payload = { 
+                    contents: [{
+                        parts: [{ text: fullPrompt }]
+                    }],
+                    generationConfig: {
+                        responseModalities: ['TEXT', 'IMAGE']
+                    },
+                };
+                
+                const response = await fetchWithBackoff(`${imageGenerationApiUrl}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                
+                // The new model returns the image data in a different part of the JSON.
+                const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+                if (base64Data) {
+                    const imageUrl = `data:image/png;base64,${base64Data}`;
                     
-                    if (result && result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
-                        return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-                    } else {
-                        throw new Error("Invalid image API response format");
-                    }
-                } catch (error) {
-                    console.error("Failed to generate image:", error);
-                    throw error;
-                }
-            };
+                    hideLoadingIndicator();
+                    // Create a separate message for the image
+                    const imageMessageElement = createChatMessage(
+                        'Here is your generated image:', 
+                        'ai', 
+                        imageUrl
+                    );
+                    chatHistory.appendChild(imageMessageElement);
 
-            // TTS Generation Function
-            const generateTTS = async (text) => {
-                if (!apiKey) {
-                    throw new Error("API key is not set. Please provide a valid key.");
+                } else {
+                    hideLoadingIndicator();
+                    console.error('API response for image generation was invalid:', result); // Log the full response
+                    // Display a more specific custom alert for common generation failures
+                    showAlert(
+                        'Image Generation Failed', 
+                        'The API did not return a valid image. This can happen with prompts that violate safety policies, such as those that include copyrighted characters or real people. Please try a simpler or different prompt.'
+                    );
                 }
+            } catch (error) {
+                hideLoadingIndicator();
+                console.error('Image Generation Error:', error);
+                showAlert('An Unexpected Error Occurred', 'There was an issue with the API call. Please check your API key and try again.');
+            }
+
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        async function readAloud(text) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                showAlert('API Key Required', 'Please enter your API key to use Text-to-Speech.');
+                return;
+            }
+
+            try {
                 const payload = {
                     contents: [{
                         parts: [{ text: text }]
@@ -356,383 +628,161 @@
                     model: "gemini-2.5-flash-preview-tts"
                 };
 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                const response = await fetchWithBackoff(`${ttsApiUrl}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
 
-                try {
-                    const response = await fetchWithRetry(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
                     
-                    const part = (response && response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0) ? response.candidates[0].content.parts[0] : null;
-
-                    if (part && part.inlineData && part.inlineData.data && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("audio/")) {
-                        const mimeType = part.inlineData.mimeType;
-                        const audioData = part.inlineData.data;
-                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
-                        const pcmData = base64ToArrayBuffer(audioData);
-                        const wavBlob = pcmToWav(pcmData, sampleRate);
-                        return URL.createObjectURL(wavBlob);
-                    } else {
-                        console.error("Invalid TTS API response format or missing data.");
-                        throw new Error("Invalid TTS API response format");
-                    }
-                } catch (error) {
-                    console.error("Failed to read aloud:", error);
-                    throw error;
-                }
-            };
-
-            const handleSendMessage = async () => {
-                const prompt = input.trim();
-                if (!prompt || isAIGenerating) return;
-
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-
-                setIsAIGenerating(true);
-                const userMessage = { role: 'user', content: prompt };
-                setInput('');
-
-                try {
-                    if (mode === 'chat') {
-                        const newChatHistory = [...chatHistory, userMessage];
-                        setChatHistory(newChatHistory);
-                        const responseContent = await generateText(newChatHistory, prompt);
-                        setChatHistory(prev => [...prev, { role: 'model', content: responseContent }]);
-                    } else if (mode === 'image') {
-                        setImageHistory(prev => [...prev, userMessage]);
-                        const imageUrl = await generateImage(prompt);
-                        setImageHistory(prev => [...prev, { role: 'model-image', content: imageUrl }]);
-                    }
-                } catch (error) {
-                    console.error("Failed to process request:", error);
-                    setErrorMessage(error.message || 'An error occurred while processing your request. Please ensure you have a valid API key.');
-                    if (mode === 'chat') {
-                        setChatHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                    } else if (mode === 'image') {
-                        setImageHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                    }
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-            
-            const handleSummarize = async () => {
-                const prompt = input.trim();
-                if (!prompt || isAIGenerating) return;
-
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-                
-                setIsAIGenerating(true);
-                const userMessage = { role: 'user', content: prompt };
-                setInput('');
-
-                try {
-                    const newWritingHistory = [...writingHistory, userMessage];
-                    setWritingHistory(newWritingHistory);
-                    const responseContent = await generateText(newWritingHistory, `Summarize the following text:\n\n${userMessage.content}`);
-                    setWritingHistory(prev => [...prev, { role: 'model', content: `**Summary:**\n\n${responseContent}` }]);
-                } catch (error) {
-                    console.error("Failed to summarize text:", error);
-                    setErrorMessage(error.message || 'An error occurred while summarizing the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-
-            const handleContinueWriting = async () => {
-                const prompt = input.trim();
-                if (!prompt || isAIGenerating) return;
-
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-
-                setIsAIGenerating(true);
-                const userMessage = { role: 'user', content: prompt };
-                setInput('');
-
-                try {
-                    const newWritingHistory = [...writingHistory, userMessage];
-                    setWritingHistory(newWritingHistory);
-                    const responseContent = await generateText(newWritingHistory, `Continue the following text:\n\n${userMessage.content}`);
-                    setWritingHistory(prev => [...prev, { role: 'model', content: `**Continued Text:**\n\n${responseContent}` }]);
-                } catch (error) {
-                    console.error("Failed to continue writing:", error);
-                    setErrorMessage(error.message || 'An error occurred while continuing the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-            
-            const handleRewrite = async () => {
-                const prompt = input.trim();
-                if (!prompt || isAIGenerating) return;
-
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-
-                setIsAIGenerating(true);
-                const userMessage = { role: 'user', content: prompt };
-                setInput('');
-
-                try {
-                    const newWritingHistory = [...writingHistory, userMessage];
-                    setWritingHistory(newWritingHistory);
-                    const responseContent = await generateText(newWritingHistory, `Rewrite the following text in a ${rewritingTone} tone:\n\n${userMessage.content}`);
-                    setWritingHistory(prev => [...prev, { role: 'model', content: `**Rewritten (${rewritingTone}):**\n\n${responseContent}` }]);
-                } catch (error) {
-                    console.error("Failed to rewrite text:", error);
-                    setErrorMessage(error.message || 'An error occurred while rewriting the text. Please ensure you have a valid API key.');
-                    setWritingHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-            
-            const handleExplainCode = async () => {
-                const prompt = input.trim();
-                if (!prompt || isAIGenerating) return;
-
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-
-                setIsAIGenerating(true);
-                const userMessage = { role: 'user', content: prompt };
-                setInput('');
-
-                try {
-                    const newCodeHistory = [...codeHistory, userMessage];
-                    setCodeHistory(newCodeHistory);
-                    const responseContent = await generateText(newCodeHistory, `Explain the following code snippet. Break down what it does, how it works, and its purpose:\n\n${userMessage.content}`);
-                    setCodeHistory(prev => [...prev, { role: 'model', content: `**Code Explanation:**\n\n${responseContent}` }]);
-                } catch (error) {
-                    console.error("Failed to explain code:", error);
-                    setErrorMessage(error.message || 'An error occurred while explaining the code. Please ensure you have a valid API key.');
-                    setCodeHistory(prev => [...prev, { role: 'model', content: error.message || 'An error occurred. Please ensure you have a valid API key.' }]);
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-            
-            const handleReadAloud = async (text) => {
-                if (isAIGenerating) return;
-                
-                if (!apiKey) {
-                    setErrorMessage("Please enter your API key to continue.");
-                    return;
-                }
-
-                setIsAIGenerating(true);
-                setErrorMessage('Generating audio...');
-
-                try {
-                    const audioUrl = await generateTTS(text);
                     const audio = new Audio(audioUrl);
                     audio.play();
-                    audio.onended = () => {
-                        URL.revokeObjectURL(audioUrl);
-                        setErrorMessage(null);
-                    };
-                    setErrorMessage('Playing audio...');
-                } catch (error) {
-                    console.error("Failed to read aloud:", error);
-                    setErrorMessage(error.message || 'An error occurred while generating audio. Please ensure you have a valid API key.');
-                } finally {
-                    setIsAIGenerating(false);
+
+                } else {
+                    showAlert('TTS Error', 'Error generating speech. Please try again.');
                 }
-            };
-            
-            const handleKeyDown = (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (mode === 'chat' || mode === 'image') {
-                        handleSendMessage();
-                    } else if (mode === 'writing' || mode === 'code') {
-                        return;
+
+            } catch (error) {
+                console.error('TTS Error:', error);
+                showAlert('An Unexpected Error Occurred', 'An error occurred with Text-to-Speech. Please check your API key and try again.');
+            }
+        }
+
+        // Helper function to convert base64 to ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Helper function to convert PCM to WAV format
+        function pcmToWav(pcm16, sampleRate) {
+            const dataLength = pcm16.length * 2;
+            const buffer = new ArrayBuffer(44 + dataLength);
+            const view = new DataView(buffer);
+            let offset = 0;
+
+            function writeString(str) {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset++, str.charCodeAt(i));
+                }
+            }
+            function writeUint32(val) { view.setUint32(offset, val, true); offset += 4; }
+            function writeUint16(val) { view.setUint16(offset, val, true); offset += 2; }
+
+            writeString('RIFF');
+            writeUint32(36 + dataLength);
+            writeString('WAVE');
+            writeString('fmt ');
+            writeUint32(16);
+            writeUint16(1);
+            writeUint16(1);
+            writeUint32(sampleRate);
+            writeUint32(sampleRate * 2);
+            writeUint16(2);
+            writeUint16(16);
+            writeString('data');
+            writeUint32(dataLength);
+
+            const pcmView = new DataView(pcm16.buffer);
+            for (let i = 0; i < pcm16.length; i++) {
+                view.setInt16(offset, pcmView.getInt16(i * 2, true), true);
+                offset += 2;
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+
+        // Event listeners for sending messages
+        sendBtn.addEventListener('click', () => {
+            const userMessage = userInput.value.trim();
+            const mode = selectMode.value;
+
+            if (mode === 'image-understanding') {
+                // For image understanding, we handle the image upload separately
+                showAlert('Image Upload Required', 'Please use the image upload button to start an Image Understanding chat.');
+            } else if (userMessage) {
+                sendChatMessage(userMessage);
+            }
+        });
+
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                const userMessage = userInput.value.trim();
+                const mode = selectMode.value;
+
+                if (mode === 'image-understanding') {
+                     showAlert('Image Upload Required', 'Please use the image upload button to start an Image Understanding chat.');
+                } else if (userMessage) {
+                    sendChatMessage(userMessage);
+                }
+            }
+        });
+
+        // Event listener for image upload button
+        imageUploadBtn.addEventListener('click', () => {
+            imageUploadInput.click();
+        });
+
+        imageUploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const imageData = e.target.result;
+                    const userMessage = userInput.value || 'Describe this image.';
+                    const mode = selectMode.value;
+
+                    if (mode === 'image-understanding') {
+                        sendImageUnderstandingMessage(userMessage, imageData);
+                    } else {
+                        sendChatMessage(userMessage, imageData);
                     }
-                }
-            };
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
-            const getPlaceholderText = (currentMode) => {
-                switch (currentMode) {
-                    case 'writing':
-                        return 'Enter your text to summarize, continue, or rewrite...';
-                    case 'code':
-                        return 'Paste a code snippet here to get an explanation...';
-                    case 'image':
-                        return 'Describe the image you want to generate...';
-                    case 'chat':
-                        return 'Start a conversation with Toki...';
-                    default:
-                        return 'Enter your prompt...';
-                }
-            };
+        // Event listener for summarize button
+        summarizeBtn.addEventListener('click', summarizeConversation);
 
-            const getActiveHistory = () => {
-                switch (mode) {
-                    case 'writing':
-                        return writingHistory;
-                    case 'code':
-                        return codeHistory;
-                    case 'image':
-                        return imageHistory;
-                    case 'chat':
-                    default:
-                        return chatHistory;
-                }
-            };
+        // Event listener for generate image button
+        generateImageBtn.addEventListener('click', generateImage);
+        
+        // Event listener for the custom alert's OK button
+        alertOkBtn.addEventListener('click', () => {
+            customAlert.style.display = 'none';
+        });
 
-            return (
-                <div className="flex flex-col h-full bg-gray-900 text-gray-200">
-                    <Modal message={errorMessage} onClose={() => setErrorMessage(null)} />
-                    <header className="p-4 bg-gray-800 shadow-md">
-                        <h1 className="text-2xl font-bold text-center text-indigo-400">Toki AI</h1>
-                    </header>
-                    <main ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4">
-                        {getActiveHistory().map((message, index) => (
-                            message.role === 'model-image' ? (
-                                <ImageMessage key={index} message={message} />
-                            ) : (
-                                <ChatMessage key={index} message={message} onReadAloud={handleReadAloud} />
-                            )
-                        ))}
-                        {isAIGenerating && (
-                            <div className="flex items-start gap-4 p-4 rounded-xl shadow-md bg-gray-700">
-                                <div className="flex-shrink-0">
-                                    <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white">
-                                        <BotIcon size={20} />
-                                    </div>
-                                </div>
-                                <div className="flex-1 mt-2">
-                                    <LoadingIndicator />
-                                </div>
-                            </div>
-                        )}
-                    </main>
-                    <footer className="p-4 bg-gray-800 shadow-inner">
-                        <div className="flex flex-col sm:flex-row items-stretch gap-2 mb-4">
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium mb-1 text-gray-300">
-                                    Select Mode:
-                                </label>
-                                <select
-                                    value={mode}
-                                    onChange={(e) => setMode(e.target.value)}
-                                    className="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                >
-                                    <option value="writing">Writing</option>
-                                    <option value="code">Code</option>
-                                    <option value="image">Image Generation</option>
-                                    <option value="chat">Gemini Chat</option>
-                                </select>
-                            </div>
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium mb-1 text-gray-300">
-                                    API Key:
-                                </label>
-                                <input
-                                    type="password"
-                                    className="w-full p-2 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    placeholder="Paste your API key here..."
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {mode === 'writing' && (
-                                <div className="flex gap-2 flex-wrap">
-                                    <button
-                                        className={`p-3 rounded-full transition-colors font-bold text-sm ${isAIGenerating || !input ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                                        onClick={handleSummarize}
-                                        disabled={isAIGenerating || !input}
-                                        title="Summarize Text"
-                                    >
-                                        Summarize ✨
-                                    </button>
-                                    <button
-                                        className={`p-3 rounded-full transition-colors font-bold text-sm ${isAIGenerating || !input ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                                        onClick={handleContinueWriting}
-                                        disabled={isAIGenerating || !input}
-                                        title="Continue Writing"
-                                    >
-                                        Continue Writing ✨
-                                    </button>
-                                    <select
-                                        value={rewritingTone}
-                                        onChange={(e) => setRewritingTone(e.target.value)}
-                                        className="p-3 rounded-full bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold"
-                                        disabled={isAIGenerating || !input}
-                                    >
-                                        <option value="formal">Formal</option>
-                                        <option value="casual">Casual</option>
-                                        <option value="professional">Professional</option>
-                                        <option value="creative">Creative</option>
-                                    </select>
-                                    <button
-                                        className={`p-3 rounded-full transition-colors font-bold text-sm ${isAIGenerating || !input ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                                        onClick={handleRewrite}
-                                        disabled={isAIGenerating || !input}
-                                        title="Rewrite Text"
-                                    >
-                                        Rewrite ✨
-                                    </button>
-                                </div>
-                            )}
-                            {mode === 'code' && (
-                                <button
-                                    className={`p-3 rounded-full transition-colors font-bold text-sm ${isAIGenerating || !input ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                                    onClick={handleExplainCode}
-                                    disabled={isAIGenerating || !input}
-                                    title="Explain Code"
-                                >
-                                    Explain Code ✨
-                                </button>
-                            )}
-                            {(mode === 'chat' || mode === 'image') && (
-                                <div className="flex flex-grow items-center">
-                                    <textarea
-                                        className="flex-1 p-3 rounded-full bg-gray-700 border border-gray-600 text-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 overflow-hidden"
-                                        placeholder={getPlaceholderText(mode)}
-                                        rows="1"
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
-                                        onKeyDown={handleKeyDown}
-                                        disabled={isAIGenerating}
-                                    ></textarea>
-                                    <button
-                                        className={`p-3 rounded-full ml-2 transition-colors ${isAIGenerating || !input ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                                        onClick={handleSendMessage}
-                                        disabled={isAIGenerating || !input}
-                                        title="Send Message"
-                                    >
-                                        <SendIcon size={24} />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </footer>
-                </div>
-            );
-        };
-
-        // Render the main App component into the root element
-        ReactDOM.render(<App />, document.getElementById('root'));
+        // Initial welcome message on load
+        function displayInitialMessage() {
+            const welcomeMessage = "Hello! I can now understand images, speak, and generate images from text. I've also gained conversational memory. How can I help you today?";
+            const welcomeMessageElement = createChatMessage(welcomeMessage, 'ai');
+            chatHistory.appendChild(welcomeMessageElement);
+            // Add initial message to history
+            chatHistoryArray.push({
+                role: "model",
+                parts: [{ text: welcomeMessage }]
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', displayInitialMessage);
     </script>
 </body>
 </html>
